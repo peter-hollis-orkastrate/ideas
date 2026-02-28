@@ -1,0 +1,867 @@
+/**
+ * OCR Provenance MCP System - Zod Validation Schemas
+ *
+ * This module provides comprehensive input validation for all MCP tool inputs.
+ * Each schema includes:
+ * - Type validation
+ * - Constraint validation (min/max, patterns, etc.)
+ * - Descriptive error messages
+ * - Default values where appropriate
+ *
+ * @module utils/validation
+ */
+
+import { z } from 'zod';
+import * as path from 'path';
+import * as fs from 'fs';
+import { homedir } from 'os';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CUSTOM ERROR CLASS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Custom validation error with descriptive message
+ */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Validate input against schema and throw descriptive error if invalid
+ *
+ * @param schema - Zod schema to validate against
+ * @param input - Input value to validate
+ * @returns Validated and typed input data
+ * @throws ValidationError with descriptive message if validation fails
+ */
+export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown): T {
+  const result = schema.safeParse(input);
+  if (!result.success) {
+    const errors = result.error.errors.map((e) => {
+      const path = e.path.length > 0 ? `${e.path.join('.')}: ` : '';
+      return `${path}${e.message}`;
+    });
+    throw new ValidationError(errors.join('; '));
+  }
+  return result.data;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHARED ENUMS AND BASE SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * OCR processing mode enum
+ */
+export const OCRMode = z.enum(['fast', 'balanced', 'accurate']);
+
+/**
+ * Item type for provenance lookups
+ */
+export const ItemType = z.enum([
+  'document',
+  'ocr_result',
+  'chunk',
+  'embedding',
+  'image',
+  'comparison',
+  'clustering',
+  'form_fill',
+  'extraction',
+  'auto',
+]);
+
+/**
+ * Export format for provenance data
+ */
+export const ExportFormat = z.enum(['json', 'w3c-prov', 'csv']);
+
+/**
+ * Export scope for provenance exports
+ */
+export const ExportScope = z.enum(['document', 'database']);
+
+/**
+ * Configuration keys that can be set
+ */
+export const ConfigKey = z.enum([
+  'datalab_default_mode',
+  'datalab_max_concurrent',
+  'embedding_batch_size',
+  'embedding_device',
+  'chunk_size',
+  'chunk_overlap_percent',
+  'max_chunk_size',
+  'auto_cluster_enabled',
+  'auto_cluster_threshold',
+  'auto_cluster_algorithm',
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATABASE MANAGEMENT SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Schema for creating a new database
+ */
+export const DatabaseCreateInput = z.object({
+  name: z
+    .string()
+    .min(1, 'Database name is required')
+    .max(64, 'Database name must be 64 characters or less')
+    .regex(
+      /^[a-zA-Z0-9_-]+$/,
+      'Database name must contain only alphanumeric characters, underscores, and hyphens'
+    ),
+  description: z.string().max(500, 'Description must be 500 characters or less').optional(),
+  storage_path: z.string().optional(),
+});
+
+/**
+ * Schema for listing databases
+ */
+export const DatabaseListInput = z.object({
+  include_stats: z.boolean().default(false),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .default(50)
+    .describe('Maximum number of databases to return (default 50)'),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .default(0)
+    .describe('Number of databases to skip for pagination'),
+});
+
+/**
+ * Schema for selecting a database
+ */
+export const DatabaseSelectInput = z.object({
+  database_name: z.string().min(1, 'Database name is required'),
+});
+
+/**
+ * Schema for getting database statistics
+ */
+export const DatabaseStatsInput = z.object({
+  database_name: z.string().optional(),
+});
+
+/**
+ * Schema for deleting a database
+ */
+export const DatabaseDeleteInput = z.object({
+  database_name: z.string().min(1, 'Database name is required'),
+  confirm: z.literal(true, {
+    errorMap: () => ({ message: 'Confirm must be true to delete database' }),
+  }),
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DOCUMENT INGESTION SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Default supported file types for ingestion
+ */
+export const DEFAULT_FILE_TYPES = [
+  // Documents
+  'pdf',
+  'docx',
+  'doc',
+  'pptx',
+  'ppt',
+  'xlsx',
+  'xls',
+  // Images
+  'png',
+  'jpg',
+  'jpeg',
+  'tiff',
+  'tif',
+  'bmp',
+  'gif',
+  'webp',
+  // Text
+  'txt',
+  'csv',
+  'md',
+];
+
+/**
+ * Schema for ingesting a directory
+ */
+export const IngestDirectoryInput = z.object({
+  directory_path: z.string().min(1, 'Directory path is required'),
+  recursive: z.boolean().default(true),
+  file_types: z.array(z.string()).optional().default(DEFAULT_FILE_TYPES),
+});
+
+/**
+ * Schema for ingesting specific files
+ */
+export const IngestFilesInput = z.object({
+  file_paths: z
+    .array(z.string().min(1, 'File path cannot be empty'))
+    .min(1, 'At least one file path is required'),
+});
+
+/**
+ * Schema for processing pending documents
+ */
+export const ProcessPendingInput = z.object({
+  max_concurrent: z.number().int().min(1).max(10).default(3),
+  ocr_mode: OCRMode.optional(),
+  // Datalab API parameters
+  max_pages: z
+    .number()
+    .int()
+    .min(1)
+    .max(7000)
+    .optional()
+    .describe('Maximum pages to process per document (Datalab limit: 7000)'),
+  page_range: z
+    .string()
+    .regex(/^[0-9,\-\s]+$/)
+    .optional()
+    .describe('Specific pages to process, 0-indexed (e.g., "0-5,10")'),
+  skip_cache: z.boolean().optional().describe('Force reprocessing, skip Datalab cache'),
+  disable_image_extraction: z
+    .boolean()
+    .optional()
+    .describe('Skip image extraction for text-only processing'),
+  extras: z
+    .array(
+      z.enum([
+        'track_changes',
+        'chart_understanding',
+        'extract_links',
+        'table_row_bboxes',
+        'infographic',
+        'new_block_types',
+      ])
+    )
+    .optional()
+    .describe('Extra Datalab features to enable'),
+  page_schema: z
+    .string()
+    .optional()
+    .describe('JSON schema string for structured data extraction per page'),
+  additional_config: z
+    .record(z.unknown())
+    .optional()
+    .describe(
+      'Additional Datalab config: keep_pageheader_in_output, keep_pagefooter_in_output, keep_spreadsheet_formatting'
+    ),
+});
+
+/**
+ * Schema for checking OCR status
+ */
+export const OCRStatusInput = z.object({
+  document_id: z.string().optional(),
+  status_filter: z.enum(['pending', 'processing', 'complete', 'failed', 'all']).default('all'),
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SEARCH SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Metadata filter for filtering search results by document metadata
+ */
+export const MetadataFilter = z
+  .object({
+    doc_title: z.string().optional(),
+    doc_author: z.string().optional(),
+    doc_subject: z.string().optional(),
+  })
+  .optional();
+
+/**
+ * Page range filter for chunk-level filtering
+ */
+export const PageRangeFilter = z
+  .object({
+    min_page: z.number().int().min(1).optional(),
+    max_page: z.number().int().min(1).optional(),
+  })
+  .optional();
+
+/**
+ * Search filters sub-object schema.
+ * Groups all filter parameters into a single `filters` object to reduce
+ * the top-level parameter count and improve schema clarity.
+ */
+export const SearchFilters = z
+  .object({
+    document_filter: z
+      .array(z.string())
+      .optional()
+      .describe('Restrict results to specific document IDs'),
+    metadata_filter: MetadataFilter.describe(
+      'Filter by document metadata (doc_title, doc_author, doc_subject)'
+    ),
+    cluster_id: z.string().optional().describe('Filter results to documents in this cluster'),
+    content_type_filter: z
+      .array(z.string())
+      .optional()
+      .describe('Filter by chunk content types (e.g., ["table", "code", "heading"])'),
+    section_path_filter: z
+      .string()
+      .optional()
+      .describe(
+        'Filter by section path prefix (e.g., "Section 3" matches "Section 3 > 3.1 > Definitions")'
+      ),
+    heading_filter: z.string().optional().describe('Filter by heading context text (LIKE match)'),
+    page_range_filter: PageRangeFilter.describe('Filter results to specific page range'),
+    is_atomic_filter: z
+      .boolean()
+      .optional()
+      .describe(
+        'When true, return only atomic chunks (complete tables, figures, code blocks). When false, exclude atomic chunks.'
+      ),
+    heading_level_filter: z
+      .object({
+        min_level: z.number().int().min(1).max(6).optional(),
+        max_level: z.number().int().min(1).max(6).optional(),
+      })
+      .optional()
+      .describe('Filter by heading level (1=h1 top-level, 6=h6 deepest)'),
+    min_page_count: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe('Only include results from documents with at least this many pages'),
+    max_page_count: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe('Only include results from documents with at most this many pages'),
+    table_columns_contain: z
+      .string()
+      .optional()
+      .describe(
+        'Filter to table chunks whose column headers contain this text (case-insensitive match on stored table_columns in processing_params)'
+      ),
+    min_quality_score: z
+      .number()
+      .min(0.01)
+      .max(5)
+      .optional()
+      .describe(
+        'Minimum OCR quality score (0.01-5). Filters to documents with quality >= threshold. Use 0.01 for "all scored documents".'
+      ),
+  })
+  .optional()
+  .default({});
+
+/**
+ * Unified search schema - single schema for keyword, semantic, and hybrid search.
+ * Mode parameter selects the search strategy. Defaults that are always-on are
+ * hardcoded in the handler (quality_boost, expand_query, exclude_duplicate_chunks,
+ * exclude headers/footers, include cluster context).
+ *
+ * Filter parameters are grouped under `filters` to reduce top-level parameter count.
+ */
+export const SearchUnifiedInput = z.object({
+  // ── Core parameters ─────────────────────────────────────────────────────
+  query: z.string().min(1, 'Query is required').max(1000, 'Query must be 1000 characters or less'),
+  mode: z
+    .enum(['keyword', 'semantic', 'hybrid'])
+    .default('hybrid')
+    .describe(
+      'Search mode: keyword (BM25), semantic (vector), or hybrid (BM25+semantic fusion). Default: hybrid.'
+    ),
+  limit: z.number().int().min(1).max(100).default(10),
+  include_provenance: z.boolean().default(false),
+  rerank: z
+    .boolean()
+    .default(false)
+    .describe('Re-rank results using local cross-encoder model for contextual relevance scoring'),
+  include_context_chunks: z
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .default(0)
+    .describe(
+      'Number of neighboring chunks to include before and after each result (0=none, max 3). Adds context_before and context_after arrays.'
+    ),
+  group_by_document: z
+    .boolean()
+    .default(false)
+    .describe('Group results by source document with document-level statistics'),
+
+  // ── Filters (grouped) ──────────────────────────────────────────────────
+  filters: SearchFilters,
+
+  // ── Keyword-mode specific ───────────────────────────────────────────────
+  phrase_search: z.boolean().default(false).describe('(keyword mode) Treat query as exact phrase'),
+  include_highlight: z
+    .boolean()
+    .default(true)
+    .describe('(keyword mode) Include highlighted snippets'),
+
+  // ── Semantic-mode specific ──────────────────────────────────────────────
+  similarity_threshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe(
+      '(semantic mode) Minimum similarity score (0-1). When omitted, uses adaptive threshold that adjusts based on result distribution. When explicitly set (e.g. 0.7), uses that exact value.'
+    ),
+
+  // ── Hybrid-mode specific ────────────────────────────────────────────────
+  bm25_weight: z.number().min(0).max(2).default(1.0).describe('(hybrid mode) BM25 result weight'),
+  semantic_weight: z
+    .number()
+    .min(0)
+    .max(2)
+    .default(1.0)
+    .describe('(hybrid mode) Semantic result weight'),
+  rrf_k: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(60)
+    .describe('(hybrid mode) RRF smoothing constant'),
+  auto_route: z
+    .boolean()
+    .default(true)
+    .describe('(hybrid mode) Auto-adjust BM25/semantic weights based on query classification'),
+
+  // ── V7 Intelligence Optimization ──────────────────────────────────────
+  compact: z
+    .boolean()
+    .default(false)
+    .describe(
+      'When true, return only essential fields per result (document_id, chunk_id, original_text, source_file_name, page_number, score, result_type) for ~77% token reduction'
+    ),
+  include_provenance_summary: z
+    .boolean()
+    .default(false)
+    .describe(
+      'When true, add a one-line provenance_summary string to each result showing the data lineage chain'
+    ),
+});
+
+/**
+ * Schema for FTS5 index management
+ */
+export const FTSManageInput = z.object({
+  action: z.enum(['rebuild', 'status']),
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DOCUMENT MANAGEMENT SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Schema for listing documents
+ */
+export const DocumentListInput = z.object({
+  status_filter: z.enum(['pending', 'processing', 'complete', 'failed']).optional(),
+  limit: z.number().int().min(1).max(1000).default(50),
+  offset: z.number().int().min(0).default(0),
+  created_after: z
+    .string()
+    .datetime()
+    .optional()
+    .describe('Filter documents created after this ISO 8601 timestamp'),
+  created_before: z
+    .string()
+    .datetime()
+    .optional()
+    .describe('Filter documents created before this ISO 8601 timestamp'),
+  file_type: z.string().optional().describe('Filter by file type (e.g., "pdf", "docx")'),
+});
+
+/**
+ * Schema for getting a specific document
+ */
+export const DocumentGetInput = z.object({
+  document_id: z.string().min(1, 'Document ID is required'),
+  include_text: z.boolean().default(false),
+  include_chunks: z.boolean().default(false),
+  include_blocks: z.boolean().default(false),
+  include_full_provenance: z.boolean().default(false),
+  chunk_limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(200)
+    .describe('Max chunks to return when include_chunks=true (default 200)'),
+  chunk_offset: z
+    .number()
+    .int()
+    .min(0)
+    .default(0)
+    .describe('Chunk offset for pagination when include_chunks=true'),
+  max_text_length: z
+    .number()
+    .int()
+    .min(1000)
+    .max(500000)
+    .default(50000)
+    .describe('Max characters of OCR text to return when include_text=true (default 50000)'),
+});
+
+/**
+ * Schema for deleting a document
+ */
+export const DocumentDeleteInput = z.object({
+  document_id: z.string().min(1, 'Document ID is required'),
+  confirm: z.literal(true, {
+    errorMap: () => ({ message: 'Confirm must be true to delete document' }),
+  }),
+});
+
+/**
+ * Schema for retrying failed documents
+ */
+export const RetryFailedInput = z.object({
+  document_id: z.string().min(1).optional(),
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROVENANCE SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Schema for getting provenance information
+ */
+export const ProvenanceGetInput = z.object({
+  item_id: z.string().min(1, 'Item ID is required'),
+  item_type: ItemType.default('auto'),
+  include_descendants: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Set true to get individual descendant records. Default returns only a count summary by type.'
+    ),
+  descendants_limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .default(50)
+    .describe('Max descendant records to return when include_descendants=true (default 50)'),
+});
+
+/**
+ * Schema for verifying provenance integrity
+ */
+export const ProvenanceVerifyInput = z.object({
+  item_id: z.string().min(1, 'Item ID is required'),
+  verify_content: z.boolean().default(true),
+  verify_chain: z.boolean().default(true),
+});
+
+/**
+ * Schema for exporting provenance data
+ */
+export const ProvenanceExportInput = z
+  .object({
+    scope: ExportScope,
+    document_id: z.string().optional(),
+    format: ExportFormat.default('json'),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(200)
+      .describe('Maximum records to return (default 200)'),
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .default(0)
+      .describe('Number of records to skip for pagination'),
+    summary_only: z
+      .boolean()
+      .default(false)
+      .describe(
+        'When true, return only record count and type distribution without full record data'
+      ),
+  })
+  .refine((data) => data.scope !== 'document' || data.document_id !== undefined, {
+    message: 'document_id is required when scope is "document"',
+    path: ['document_id'],
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONFIG SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Schema for getting configuration
+ */
+export const ConfigGetInput = z.object({
+  key: ConfigKey.optional(),
+});
+
+/**
+ * Schema for setting configuration
+ */
+export const ConfigSetInput = z.object({
+  key: ConfigKey,
+  value: z.union([z.string(), z.number(), z.boolean()]),
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PATH SANITIZATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * System mount paths that should never be auto-added as allowed directories.
+ * These are kernel/system virtual filesystems, not user data volumes.
+ */
+const SYSTEM_MOUNT_PREFIXES = [
+  '/proc',
+  '/sys',
+  '/dev',
+  '/etc',
+  '/run',
+  '/var/lib/docker',
+  '/snap',
+];
+
+/**
+ * Filesystem types that indicate real bind-mounted volumes (not virtual/pseudo FSes).
+ */
+const BIND_MOUNT_FS_TYPES = new Set([
+  'ext4',
+  'ext3',
+  'ext2',
+  'xfs',
+  'btrfs',
+  'zfs',
+  'ntfs',
+  'vfat',
+  'fuseblk',
+  'fuse',
+  'overlay',
+  'nfs',
+  'nfs4',
+  'cifs',
+  'smb',
+  '9p',        // WSL2
+  'drvfs',     // WSL1
+  'virtiofs',  // macOS Docker
+]);
+
+/** Cache: once we detect Docker volume mounts, we don't re-read /proc/mounts. */
+let _dockerMountCache: string[] | null = null;
+
+/**
+ * Detect user-accessible Docker volume mounts by reading /proc/mounts.
+ *
+ * Only runs when /.dockerenv exists (i.e., inside a Docker container).
+ * Returns an empty array if not in Docker or if /proc/mounts cannot be read.
+ * Results are cached after the first successful call.
+ */
+function detectDockerVolumeMounts(): string[] {
+  if (_dockerMountCache !== null) {
+    return _dockerMountCache;
+  }
+
+  _dockerMountCache = [];
+
+  try {
+    // Only attempt detection inside Docker containers
+    if (!fs.existsSync('/.dockerenv')) {
+      return _dockerMountCache;
+    }
+
+    const mountsContent = fs.readFileSync('/proc/mounts', 'utf-8');
+    const detected: string[] = [];
+
+    for (const line of mountsContent.split('\n')) {
+      const parts = line.split(/\s+/);
+      if (parts.length < 3) continue;
+
+      const mountPoint = parts[1];
+      const fsType = parts[2];
+
+      // Skip non-bind-mount filesystem types
+      if (!BIND_MOUNT_FS_TYPES.has(fsType)) continue;
+
+      // Skip system/kernel mount paths
+      const isSystemMount = SYSTEM_MOUNT_PREFIXES.some(
+        (prefix) => mountPoint === prefix || mountPoint.startsWith(prefix + '/')
+      );
+      if (isSystemMount) continue;
+
+      // Skip root filesystem mount
+      if (mountPoint === '/') continue;
+
+      // Only include paths that actually exist and are directories
+      try {
+        const stat = fs.statSync(mountPoint);
+        if (stat.isDirectory()) {
+          detected.push(path.resolve(mountPoint));
+        }
+      } catch {
+        // Mount point not accessible, skip
+      }
+    }
+
+    if (detected.length > 0) {
+      // Log detected mounts for debugging (stderr only, never stdout)
+      console.error(
+        `[path-whitelist] Auto-detected Docker volume mounts: ${detected.join(', ')}`
+      );
+    }
+
+    _dockerMountCache = detected;
+  } catch {
+    // /proc/mounts unreadable or other error -- fall back silently
+    _dockerMountCache = [];
+  }
+
+  return _dockerMountCache;
+}
+
+/**
+ * Build the default set of allowed base directories.
+ *
+ * SEC-002: Paths MUST always be validated against allowed directories.
+ * The default set covers all directories the system legitimately needs:
+ *   - The storage path (database location) from server config
+ *   - The user's home directory (documents live here)
+ *   - /tmp for temporary files
+ *   - The current working directory (project root)
+ *   - Any directories specified via OCR_PROVENANCE_ALLOWED_DIRS env var
+ *   - Auto-detected Docker volume mounts (when running inside Docker)
+ *
+ * This function is called lazily so it picks up the current config at call time.
+ */
+function getDefaultAllowedBaseDirs(): string[] {
+  // Inline the default storage path computation to avoid circular dependency and
+  // module resolution failures (M-8: createRequire fails during vitest because
+  // it resolves .js from src/ where only .ts files exist). This matches the
+  // value in src/services/storage/database/helpers.ts DEFAULT_STORAGE_PATH.
+  const storagePath =
+    process.env.OCR_PROVENANCE_DATABASES_PATH ||
+    path.join(homedir(), '.ocr-provenance', 'databases');
+
+  const dirs = [
+    path.resolve(storagePath),
+    path.resolve(homedir()),
+    path.resolve('/tmp'),
+    path.resolve(process.cwd()),
+  ];
+
+  // OCR_PROVENANCE_ALLOWED_DIRS: comma-separated list of additional allowed directories.
+  // Used in Docker to allow read-only host mounts (e.g., /host).
+  const extraDirs = process.env.OCR_PROVENANCE_ALLOWED_DIRS;
+  if (extraDirs) {
+    for (const d of extraDirs.split(',')) {
+      const trimmed = d.trim();
+      if (trimmed) {
+        dirs.push(path.resolve(trimmed));
+      }
+    }
+  }
+
+  // Auto-detect Docker bind-mounted volumes from /proc/mounts.
+  // This allows custom volume mounts (e.g., -v /my/docs:/code:ro) to work
+  // without requiring users to manually set OCR_PROVENANCE_ALLOWED_DIRS.
+  const dockerMounts = detectDockerVolumeMounts();
+  for (const mount of dockerMounts) {
+    if (!dirs.includes(mount)) {
+      dirs.push(mount);
+    }
+  }
+
+  return dirs;
+}
+
+/**
+ * Sanitize a file path to prevent directory traversal attacks.
+ *
+ * SEC-002 ENFORCEMENT: Paths are ALWAYS validated against allowed directories.
+ * When no allowedBaseDirs are provided, a default set is used that covers
+ * the storage path, home directory, /tmp, and the current working directory.
+ *
+ * - Rejects null bytes
+ * - Resolves the path fully via path.resolve() to eliminate '..' segments
+ * - Verifies the resolved path starts with one of the allowed base directories
+ *
+ * @param filePath - The file path to sanitize
+ * @param allowedBaseDirs - Optional array of allowed base directories. When omitted,
+ *   defaults to [storagePath, homedir, /tmp, cwd] per SEC-002.
+ * @returns The resolved, safe path
+ * @throws ValidationError if the path contains null bytes or escapes allowed directories
+ */
+export function sanitizePath(filePath: string, allowedBaseDirs?: string[]): string {
+  if (filePath.includes('\0')) {
+    throw new ValidationError('Path contains null bytes');
+  }
+
+  // Detect Windows-style paths on Linux (common in Docker when MCP client sends host paths)
+  // Pattern: drive letter followed by colon and backslash or forward slash (e.g., C:\, D:/)
+  if (process.platform !== 'win32' && /^[a-zA-Z]:[/\\]/.test(filePath)) {
+    throw new ValidationError(
+      `Windows-style path detected: "${filePath}". ` +
+        `In Docker, files must be accessed via container mount paths. ` +
+        `If your host directory is mounted at /host, use "/host/${filePath.slice(3).replace(/\\/g, '/')}" instead. ` +
+        `Check your Docker volume mounts with: docker inspect <container_id>`
+    );
+  }
+
+  const resolved = path.resolve(filePath);
+
+  // SEC-002: ALWAYS enforce path restrictions. Use defaults when none provided.
+  const baseDirs =
+    allowedBaseDirs && allowedBaseDirs.length > 0 ? allowedBaseDirs : getDefaultAllowedBaseDirs();
+
+  const resolvedBases = baseDirs.map((d) => path.resolve(d));
+  const withinAllowed = resolvedBases.some(
+    (base) => resolved === base || resolved.startsWith(base + path.sep)
+  );
+  if (!withinAllowed) {
+    throw new ValidationError(
+      `Path "${resolved}" is outside allowed directories: ${resolvedBases.join(', ')}. ` +
+        `To allow this path, set OCR_PROVENANCE_ALLOWED_DIRS environment variable ` +
+        `(comma-separated list of directories). ` +
+        `Example: -e OCR_PROVENANCE_ALLOWED_DIRS=/host,/data,/code`
+    );
+  }
+
+  return resolved;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SQL ESCAPING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Escape special characters for safe use in SQL LIKE clauses.
+ * Escapes '%', '_', and '\' characters.
+ *
+ * @param pattern - The raw string to escape
+ * @returns The escaped string safe for LIKE clause usage
+ */
+export function escapeLikePattern(pattern: string): string {
+  return pattern.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
