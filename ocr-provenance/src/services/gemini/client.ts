@@ -95,6 +95,8 @@ interface GenerationOptions {
   thinkingConfig?: { thinkingLevel: ThinkingLevel };
   mediaResolution?: MediaResolution;
   requestTimeout?: number;
+  /** Override which Ollama model to use for this specific request. */
+  model?: string;
 }
 
 /**
@@ -132,7 +134,8 @@ export class GeminiClient {
   }
 
   /**
-   * Fast mode: text-only prompt with optional JSON schema
+   * Fast mode: text-only prompt with optional JSON schema.
+   * Uses OLLAMA_OCR_MODEL (the document-extraction model).
    */
   async fast(
     prompt: string,
@@ -144,14 +147,20 @@ export class GeminiClient {
       maxOutputTokens: options?.maxOutputTokens ?? 4096,
       responseSchema: schema,
       requestTimeout: options?.requestTimeout,
+      model: this.config.ocrModel,
     });
   }
 
   /**
-   * Thinking mode: kept for interface compat, behaves same as fast for Ollama
+   * Thinking mode: kept for interface compat, behaves same as fast for Ollama.
+   * Uses OLLAMA_OCR_MODEL (document-extraction model).
    */
   async thinking(prompt: string, _level: ThinkingLevel = 'HIGH'): Promise<GeminiResponse> {
-    return this.generateText(prompt, { temperature: 0.1, maxOutputTokens: 8192 });
+    return this.generateText(prompt, {
+      temperature: 0.1,
+      maxOutputTokens: 8192,
+      model: this.config.ocrModel,
+    });
   }
 
   /**
@@ -201,7 +210,8 @@ export class GeminiClient {
   }
 
   /**
-   * Text-only generation (no image)
+   * Text-only generation (no image).
+   * Uses options.model if set, otherwise falls back to config.ocrModel.
    */
   private async generateText(
     prompt: string,
@@ -213,9 +223,11 @@ export class GeminiClient {
       ? `\n\nRespond with valid JSON matching: ${JSON.stringify(options.responseSchema)}`
       : '';
 
+    const model = options.model ?? this.config.ocrModel;
+
     const response = await this.circuitBreaker.execute(() =>
       this.executeWithRetry(() =>
-        this.callOllamaGenerate(prompt + schemaInstruction, options)
+        this.callOllamaGenerate(prompt + schemaInstruction, { ...options, model })
       )
     );
 
@@ -292,7 +304,8 @@ export class GeminiClient {
   }
 
   /**
-   * Call Ollama /api/generate for text-only prompts
+   * Call Ollama /api/generate for text-only prompts.
+   * Uses options.model if provided, otherwise config.ocrModel.
    */
   private async callOllamaGenerate(
     prompt: string,
@@ -304,6 +317,8 @@ export class GeminiClient {
       () => controller.abort(),
       options.requestTimeout ?? 60_000
     );
+
+    const model = options.model ?? this.config.ocrModel;
 
     interface OllamaGenerateResponse {
       model: string;
@@ -319,7 +334,7 @@ export class GeminiClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: this.config.model,
+          model,
           prompt,
           stream: false,
           options: {
@@ -516,7 +531,8 @@ export class GeminiClient {
    */
   getStatus() {
     return {
-      model: this.config.model,
+      model: this.config.vlmModel,       // VLM model (image analysis)
+      ocrModel: this.config.ocrModel,    // OCR-assist model (document extraction)
       baseUrl: this.config.baseUrl,
       rateLimiter: { available: true, queueLength: 0 },
       circuitBreaker: this.circuitBreaker.getStatus(),

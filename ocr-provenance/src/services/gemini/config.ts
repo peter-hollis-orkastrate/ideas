@@ -1,23 +1,28 @@
 /**
- * Ollama Local VLM Configuration
+ * Ollama Local VLM + OCR Configuration
  *
  * Replaces the former Gemini API configuration.
  * No API key required — Ollama runs locally.
+ *
+ * Two separate model slots mirror the original two-model design:
+ *   OLLAMA_VLM_MODEL  — image analysis / description  (replaces Gemini)
+ *   OLLAMA_OCR_MODEL  — document text extraction assist (replaces Datalab AI)
  */
 
 import { z } from 'zod';
 
-// Default model — any Ollama vision model works (llava, llava-llama3, minicpm-v, moondream2)
 export const OLLAMA_MODELS = {
-  DEFAULT: 'llava',
+  // Good all-round vision models
+  LLAVA: 'llava',
   LLAVA_LLAMA3: 'llava-llama3',
+  // Compact / fast options
   MINICPM_V: 'minicpm-v',
   MOONDREAM: 'moondream2',
 } as const;
 
 // Kept for interface compatibility with callers that reference GEMINI_MODELS
 export const GEMINI_MODELS = {
-  FLASH_3: OLLAMA_MODELS.DEFAULT,
+  FLASH_3: OLLAMA_MODELS.LLAVA,
 } as const;
 
 export type GeminiModelId = string;
@@ -51,9 +56,20 @@ export type MediaResolution = 'MEDIA_RESOLUTION_HIGH' | 'MEDIA_RESOLUTION_LOW';
 
 // Configuration schema for Ollama
 export const GeminiConfigSchema = z.object({
-  // Ollama settings
+  // Ollama server
   baseUrl: z.string().default('http://localhost:11434'),
-  model: z.string().default(OLLAMA_MODELS.DEFAULT),
+
+  // VLM model — used for image analysis / description (replaces Gemini)
+  // Set via OLLAMA_VLM_MODEL. Needs vision support (e.g. llava, llava-llama3, minicpm-v).
+  vlmModel: z.string().default(OLLAMA_MODELS.LLAVA),
+
+  // OCR-assist model — used for document text extraction tasks (replaces Datalab AI layer)
+  // Set via OLLAMA_OCR_MODEL. Can be any capable text model; a vision model is better
+  // for scanned/handwritten docs. Defaults to the same model as vlmModel when unset.
+  ocrModel: z.string().default(OLLAMA_MODELS.LLAVA),
+
+  // `model` kept for internal use — set to vlmModel by loadGeminiConfig()
+  model: z.string().default(OLLAMA_MODELS.LLAVA),
 
   // Generation defaults
   maxOutputTokens: z.number().default(8192),
@@ -100,14 +116,30 @@ function parseIntEnv(name: string, fallback: number): number {
  * Load Ollama configuration from environment variables.
  *
  * Environment variables:
- *   OLLAMA_BASE_URL  — Ollama server URL (default: http://localhost:11434)
- *   OLLAMA_MODEL     — Vision model to use (default: llava)
+ *   OLLAMA_BASE_URL   — Ollama server URL (default: http://localhost:11434)
+ *   OLLAMA_VLM_MODEL  — Vision model for image analysis (default: llava)
+ *   OLLAMA_OCR_MODEL  — Model for OCR text-extraction tasks (default: llava)
  *   OLLAMA_TEMPERATURE — Generation temperature (default: 0.1)
  */
 export function loadGeminiConfig(overrides?: Partial<GeminiConfig>): GeminiConfig {
+  const vlmModel =
+    overrides?.vlmModel ??
+    process.env.OLLAMA_VLM_MODEL ??
+    // Legacy single-model fallback
+    process.env.OLLAMA_MODEL ??
+    OLLAMA_MODELS.LLAVA;
+
+  const ocrModel =
+    overrides?.ocrModel ??
+    process.env.OLLAMA_OCR_MODEL ??
+    // Fall back to the VLM model if no dedicated OCR model is set
+    vlmModel;
+
   const envConfig = {
     baseUrl: overrides?.baseUrl ?? process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
-    model: overrides?.model ?? process.env.OLLAMA_MODEL ?? OLLAMA_MODELS.DEFAULT,
+    vlmModel,
+    ocrModel,
+    model: vlmModel, // `model` used by analyzeImage() — always the VLM model
     maxOutputTokens: parseIntEnv('OLLAMA_MAX_OUTPUT_TOKENS', 8192),
     temperature: process.env.OLLAMA_TEMPERATURE ? parseFloat(process.env.OLLAMA_TEMPERATURE) : 0.1,
     apiKey: 'not-required',
@@ -138,3 +170,4 @@ export const GENERATION_PRESETS = {
     thinkingConfig: { thinkingLevel: 'MINIMAL' as ThinkingLevel },
   },
 } as const;
+
