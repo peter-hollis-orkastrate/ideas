@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IFA Tax Assistant — Template Management</title>
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+
+  <div class="page-header">
+    <div style="flex:1;">
+      <h1>Template Management</h1>
+      <small>IFA Tax Assistant — Mitchell Financial Planning</small>
+    </div>
+    <a href="sidepanel.html" class="back-link">← Back to Panel</a>
+  </div>
+
+  <div class="page-content">
+
+    <div class="instructions">
+      <strong>How templates work:</strong> Templates are .docx files with placeholders like <code>{client_name}</code>, <code>{total_value}</code>, etc. When you generate a letter, the extension populates these placeholders with live data extracted from the iO client record. Three built-in templates are pre-loaded. You can add your own .docx templates using the "Add Template" button below.
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Loaded Templates</h2>
+        <button class="btn btn-primary" id="add-template-btn">+ Add Template</button>
+        <input type="file" id="template-file-input" accept=".docx" style="display:none;" />
+      </div>
+      <div class="card-body" style="padding:0;">
+        <table class="templates-table" id="templates-table">
+          <thead>
+            <tr>
+              <th>Template Name</th>
+              <th>Size</th>
+              <th>Added</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="templates-tbody">
+            <!-- populated by JS -->
+          </tbody>
+        </table>
+        <div id="templates-empty" class="empty-state" style="display:none;">
+          <div class="es-icon">📄</div>
+          <p>No templates loaded. Click "Add Template" to import a .docx file.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="status-area"></div>
+
+    <div class="card">
+      <div class="card-header"><h2>Available Placeholders</h2></div>
+      <div class="card-body">
+        <p style="font-size:12px; color:#666; margin-bottom:12px;">Use these in your .docx templates. Placeholders must be wrapped in single curly braces.</p>
+        <table class="templates-table">
+          <thead>
+            <tr><th>Placeholder</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>{client_name}</code></td><td>Client full name</td></tr>
+            <tr><td><code>{client_address}</code></td><td>Client address</td></tr>
+            <tr><td><code>{date}</code></td><td>Today's date (e.g., "1 March 2026")</td></tr>
+            <tr><td><code>{adviser_name}</code></td><td>Adviser name from iO</td></tr>
+            <tr><td><code>{review_date}</code></td><td>Last review date</td></tr>
+            <tr><td><code>{next_review}</code></td><td>Next review date</td></tr>
+            <tr><td><code>{total_value}</code></td><td>Total portfolio value</td></tr>
+            <tr><td><code>{pension_total}</code></td><td>Sum of pension holdings</td></tr>
+            <tr><td><code>{isa_total}</code></td><td>Sum of ISA holdings</td></tr>
+            <tr><td><code>{gia_total}</code></td><td>Sum of GIA holdings</td></tr>
+            <tr><td><code>{cash_total}</code></td><td>Sum of cash holdings</td></tr>
+            <tr><td><code>{tax_year}</code></td><td>Current tax year (e.g., "2025/26")</td></tr>
+            <tr><td><code>{isa_allowance}</code></td><td>ISA annual subscription limit</td></tr>
+            <tr><td><code>{isa_contributions_detail}</code></td><td>Per-person ISA usage summary</td></tr>
+            <tr><td><code>{pension_contributions_detail}</code></td><td>Per-person pension contribution summary</td></tr>
+            <tr><td><code>{cgt_detail}</code></td><td>CGT position summary</td></tr>
+            <tr><td><code>{tax_observations}</code></td><td>Full tax observations (all 6)</td></tr>
+            <tr><td><code>{recommended_actions}</code></td><td>Actions for amber/red observations</td></tr>
+            <tr><td><code>{isa_utilisation_detail}</code></td><td>Detailed ISA usage per person</td></tr>
+            <tr><td><code>{isa_recommendation}</code></td><td>ISA top-up recommendation text</td></tr>
+            <tr><td><code>{cgt_position_detail}</code></td><td>GIA and gains description</td></tr>
+            <tr><td><code>{estimated_gains}</code></td><td>Estimated capital gains figure</td></tr>
+            <tr><td><code>{cgt_annual_exempt}</code></td><td>CGT annual exempt amount</td></tr>
+            <tr><td><code>{taxable_gain}</code></td><td>Gain above exempt amount</td></tr>
+            <tr><td><code>{estimated_cgt_liability}</code></td><td>Estimated CGT liability</td></tr>
+            <tr><td><code>{cgt_rate_explanation}</code></td><td>Explanation of which CGT rate applies</td></tr>
+            <tr><td><code>{cgt_options}</code></td><td>Options to mitigate CGT</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /page-content -->
+
+  <script src="settings.js"></script>
+</body>
+</html>

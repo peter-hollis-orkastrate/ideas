@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IFA Tax Assistant</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="sp-header">
+    <div class="sp-header-top">
+      <div class="sp-brand">
+        IFA Tax Assistant
+        <small>Powered by Mitchell FP</small>
+      </div>
+      <button class="sp-refresh-btn" id="refresh-btn">⟳ Refresh</button>
+    </div>
+    <div class="sp-tabs">
+      <button class="sp-tab active" data-tab="summary">Client Summary</button>
+      <button class="sp-tab" data-tab="observations">Tax Observations</button>
+      <button class="sp-tab" data-tab="letter">Generate Letter</button>
+    </div>
+  </div>
+
+  <!-- Tab: Client Summary -->
+  <div class="sp-content">
+    <div class="tab-panel active" id="tab-summary">
+
+      <div id="summary-empty" class="empty-state">
+        <div class="es-icon">📋</div>
+        <p>Open the intelliflo office client record page and click <strong>Refresh</strong> to load client data.</p>
+      </div>
+
+      <div id="summary-loaded" style="display:none;">
+
+        <!-- Portfolio Value -->
+        <div class="portfolio-value">
+          <div class="pv-label">Total Portfolio Value</div>
+          <div class="pv-amount" id="total-value">—</div>
+        </div>
+
+        <!-- Client Info -->
+        <div class="card">
+          <div class="card-header"><h3>Client</h3></div>
+          <div class="card-body">
+            <div class="info-grid">
+              <div class="info-item"><div class="il">Name</div><div class="iv" id="info-name">—</div></div>
+              <div class="info-item"><div class="il">Risk Profile</div><div class="iv" id="info-risk">—</div></div>
+              <div class="info-item"><div class="il">Address</div><div class="iv" id="info-address">—</div></div>
+              <div class="info-item"><div class="il">Adviser</div><div class="iv" id="info-adviser">—</div></div>
+              <div class="info-item"><div class="il">Last Review</div><div class="iv" id="info-review">—</div></div>
+              <div class="info-item"><div class="il">Next Review</div><div class="iv" id="info-next-review">—</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Holdings -->
+        <div class="card">
+          <div class="card-header"><h3>Holdings by Wrapper</h3></div>
+          <div class="card-body" id="holdings-grouped">
+            <!-- populated by JS -->
+          </div>
+        </div>
+
+        <!-- Tax Year Activity -->
+        <div class="card">
+          <div class="card-header"><h3>Tax Year Activity <span id="tax-year-label" style="font-weight:400; color:#888; text-transform:none; letter-spacing:0;"></span></h3></div>
+          <div class="card-body">
+            <div class="info-grid">
+              <div class="info-item">
+                <div class="il">ISA Contributions</div>
+                <div class="iv" id="ty-isa">—</div>
+              </div>
+              <div class="info-item">
+                <div class="il">Pension Contributions</div>
+                <div class="iv" id="ty-pension">—</div>
+              </div>
+              <div class="info-item">
+                <div class="il">Est. Capital Gains</div>
+                <div class="iv" id="ty-cgt">—</div>
+              </div>
+              <div class="info-item">
+                <div class="il">Dividend Income</div>
+                <div class="iv" id="ty-dividend">—</div>
+              </div>
+              <div class="info-item">
+                <div class="il">Salary</div>
+                <div class="iv" id="ty-salary">—</div>
+              </div>
+              <div class="info-item">
+                <div class="il">Carry Forward</div>
+                <div class="iv" id="ty-carry">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="timestamp" id="last-refreshed"></div>
+
+      </div><!-- /summary-loaded -->
+    </div><!-- /tab-summary -->
+
+    <!-- Tab: Tax Observations -->
+    <div class="tab-panel" id="tab-observations">
+      <div id="obs-empty" class="empty-state">
+        <div class="es-icon">🔍</div>
+        <p>Load client data first (see Client Summary tab) to see tax observations.</p>
+      </div>
+      <div id="obs-loaded" style="display:none;">
+        <!-- observation cards populated by JS -->
+      </div>
+    </div>
+
+    <!-- Tab: Generate Letter -->
+    <div class="tab-panel" id="tab-letter">
+
+      <div id="letter-no-data" class="empty-state">
+        <div class="es-icon">✉️</div>
+        <p>Load client data first (see Client Summary tab) before generating a letter.</p>
+      </div>
+
+      <div id="letter-form" style="display:none;">
+
+        <div class="form-group">
+          <label>Template</label>
+          <select id="template-select">
+            <option value="">— Select a template —</option>
+          </select>
+        </div>
+
+        <div class="btn-row" style="justify-content:space-between; align-items:center;">
+          <button class="btn btn-primary" id="generate-btn" disabled>Generate Preview</button>
+          <a href="settings.html" target="_blank" class="settings-link">⚙ Manage Templates</a>
+        </div>
+
+        <div id="letter-preview" style="display:none;">
+          <div class="preview-panel">
+            <h4>Placeholder Values</h4>
+            <div id="preview-mappings">
+              <!-- rows populated by JS -->
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-success" id="download-btn">⬇ Download .docx</button>
+          </div>
+        </div>
+
+        <div id="letter-status"></div>
+
+      </div>
+    </div>
+
+  </div><!-- /sp-content -->
+
+  <!-- Dependencies -->
+  <script src="js-yaml.min.js"></script>
+  <script src="pizzip.js"></script>
+  <script src="docxtemplater.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

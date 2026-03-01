@@ -1,0 +1,156 @@
+# HMRC Tax Rules — 2025/26 Tax Year
+# ===================================
+# This file is the SINGLE SOURCE OF TRUTH for all tax thresholds and rates.
+# The extension uses ONLY these values — it never guesses or invents tax rules.
+#
+# Maintenance: Update this file after each Budget/Autumn Statement.
+# Typically needs updating 1-2 times per year.
+#
+# Last updated: 2025-04-06
+# Source: GOV.UK / HMRC published rates and allowances
+# Next expected update: Autumn Statement 2025 or Budget 2026
+
+tax_year: "2025/26"
+tax_year_start: "2025-04-06"
+tax_year_end: "2026-04-05"
+
+# ─── INCOME TAX ──────────────────────────────────────────────────────
+income_tax:
+  personal_allowance: 12570
+  personal_allowance_taper_threshold: 100000  # reduced by £1 for every £2 over £100k
+  basic_rate: 20
+  basic_rate_band: 37700  # taxable income £12,571 to £50,270
+  higher_rate: 40
+  higher_rate_threshold: 50270  # personal allowance + basic rate band
+  additional_rate: 45
+  additional_rate_threshold: 125140
+
+# ─── NATIONAL INSURANCE ─────────────────────────────────────────────
+national_insurance:
+  # Employee (Class 1 primary)
+  primary_threshold: 12570  # per year
+  upper_earnings_limit: 50270
+  rate_between: 8    # between PT and UEL
+  rate_above: 2      # above UEL
+  # Employer (Class 1 secondary)
+  employer_secondary_threshold: 5000  # reduced from £9,100 from April 2025
+  employer_rate: 15  # increased from 13.8% from April 2025
+
+# ─── DIVIDENDS ───────────────────────────────────────────────────────
+dividends:
+  allowance: 500  # reduced from £1,000 in 2023/24
+  basic_rate: 8.75
+  higher_rate: 33.75
+  additional_rate: 39.35
+
+# ─── CAPITAL GAINS TAX ──────────────────────────────────────────────
+capital_gains_tax:
+  annual_exempt_amount: 3000  # reduced from £6,000 in 2023/24
+  # Standard assets
+  basic_rate: 10
+  higher_rate: 20
+  # Residential property
+  basic_rate_residential: 18
+  higher_rate_residential: 24
+  # Carried interest
+  basic_rate_carried_interest: 18
+  higher_rate_carried_interest: 28  # rising to 32% from April 2026
+  # Reporting
+  reporting_deadline_days: 60  # for UK residential property disposals
+
+# ─── ISA ─────────────────────────────────────────────────────────────
+isa:
+  annual_allowance: 20000
+  types:
+    - name: "Cash ISA"
+      min_age: 18
+    - name: "Stocks and Shares ISA"
+      min_age: 18
+    - name: "Innovative Finance ISA"
+      min_age: 18
+    - name: "Lifetime ISA"
+      min_age: 18
+      max_age: 39  # to open (can contribute until 50)
+      annual_limit: 4000  # counts towards overall £20k
+      bonus_rate: 25  # 25% government bonus
+  junior_isa_allowance: 9000
+
+# ─── PENSIONS ────────────────────────────────────────────────────────
+pensions:
+  annual_allowance: 60000
+  money_purchase_annual_allowance: 10000  # if benefits flexibly accessed
+  tapered_annual_allowance:
+    threshold_income: 200000   # both conditions must be met
+    adjusted_income: 260000    # taper starts here
+    minimum_allowance: 10000   # floor after tapering
+    taper_rate: 50             # £1 reduction for every £2 over adjusted income
+  carry_forward_years: 3       # can use unused allowance from previous 3 tax years
+  tax_free_lump_sum_rate: 25   # percentage of pension fund
+  tax_free_lump_sum_max: 268275  # absolute cap (25% of old LTA)
+  lifetime_allowance: "abolished"  # from 6 April 2024
+  state_pension:
+    full_new_weekly: 230.25    # 2025/26 full new state pension
+    full_new_annual: 11973     # approximate annual equivalent
+    qualifying_years: 35       # for full new state pension
+  state_pension_age: 66        # rising to 67 between May 2026 and March 2028
+
+# ─── INHERITANCE TAX ─────────────────────────────────────────────────
+inheritance_tax:
+  nil_rate_band: 325000        # frozen until April 2030
+  residence_nil_rate_band: 175000  # frozen until April 2030
+  residence_nil_rate_taper_threshold: 2000000  # reduced by £1 per £2 over
+  rate: 40
+  reduced_rate: 36             # if 10%+ of net estate left to charity
+  # Annual exemptions
+  annual_exemption: 3000       # per person, per tax year
+  small_gifts_exemption: 250   # per recipient
+  wedding_gift_parent: 5000
+  wedding_gift_grandparent: 2500
+  wedding_gift_other: 1000
+  # PETs
+  potentially_exempt_transfer_years: 7
+  taper_relief:                # applies to gifts in 3-7 year window
+    - { years_before_death: "3-4", relief_percent: 20 }
+    - { years_before_death: "4-5", relief_percent: 40 }
+    - { years_before_death: "5-6", relief_percent: 60 }
+    - { years_before_death: "6-7", relief_percent: 80 }
+  # Upcoming change
+  pensions_in_estate_from: "2027-04-06"  # pensions included in IHT from this date
+
+# ─── SAVINGS ─────────────────────────────────────────────────────────
+savings:
+  personal_savings_allowance:
+    basic_rate: 1000
+    higher_rate: 500
+    additional_rate: 0
+  starting_rate_for_savings: 0     # 0% rate
+  starting_rate_band: 5000         # available if non-savings income < £17,570
+
+# ─── STAMP DUTY LAND TAX ────────────────────────────────────────────
+# England and Northern Ireland only
+stamp_duty:
+  residential:
+    - { from: 0, to: 125000, rate: 0 }
+    - { from: 125001, to: 250000, rate: 2 }
+    - { from: 250001, to: 925000, rate: 5 }
+    - { from: 925001, to: 1500000, rate: 10 }
+    - { above: 1500000, rate: 12 }
+  first_time_buyer:
+    nil_rate_threshold: 300000
+    max_purchase_price: 500000     # above this, normal rates apply
+  additional_property_surcharge: 5  # increased from 3% from October 2024
+
+# ─── MISCELLANEOUS ───────────────────────────────────────────────────
+other:
+  marriage_allowance: 1260         # transferable between spouses
+  blind_persons_allowance: 3070
+  trading_allowance: 1000          # tax-free trading income
+  property_allowance: 1000         # tax-free property income
+  rent_a_room_relief: 7500        # tax-free income from lodger
+
+# ─── ALERT THRESHOLDS ───────────────────────────────────────────────
+# Used by the extension to determine observation severity
+alert_thresholds:
+  green: 0        # any remaining allowance = opportunity
+  amber: 80       # >80% of allowance used = approaching limit
+  red: 100        # 100% exceeded = action needed

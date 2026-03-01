@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>intelliflo office — Client Record</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+      font-size: 14px;
+      color: #1a1a2e;
+      background: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Top Nav ──────────────────────────────────────────── */
+    .topnav {
+      background: #fff;
+      border-bottom: 1px solid #dde1e7;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 32px;
+      flex-shrink: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      z-index: 100;
+    }
+
+    .topnav .brand {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0066CC;
+      letter-spacing: -0.3px;
+      flex-shrink: 0;
+    }
+
+    .topnav .brand span {
+      color: #004a99;
+    }
+
+    .topnav-links {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+    }
+
+    .topnav-links a {
+      text-decoration: none;
+      color: #555;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+
+    .topnav-links a:hover { background: #f0f2f5; color: #0066CC; }
+
+    .topnav-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .topnav-right .user-badge {
+      background: #0066CC;
+      color: #fff;
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 600;
+    }
+
+    .topnav-right .user-info {
+      font-size: 12px;
+      color: #666;
+      line-height: 1.3;
+    }
+
+    /* ── Body layout ──────────────────────────────────────── */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ──────────────────────────────────────────── */
+    .sidebar {
+      width: 200px;
+      background: #1c2b4a;
+      color: #c8d4e8;
+      display: flex;
+      flex-direction: column;
+      padding-top: 8px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-section {
+      margin-bottom: 8px;
+    }
+
+    .sidebar-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #7a8fad;
+      padding: 12px 20px 4px;
+    }
+
+    .sidebar a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 20px;
+      text-decoration: none;
+      color: #c8d4e8;
+      font-size: 13px;
+      transition: background 0.15s;
+      border-left: 3px solid transparent;
+    }
+
+    .sidebar a:hover {
+      background: rgba(255,255,255,0.06);
+      color: #fff;
+    }
+
+    .sidebar a.active {
+      background: rgba(0,102,204,0.25);
+      color: #7ab8ff;
+      border-left-color: #0066CC;
+      font-weight: 600;
+    }
+
+    .sidebar a .icon {
+      font-size: 15px;
+      width: 18px;
+      text-align: center;
+    }
+
+    /* ── Main ──────────────────────────────────────────────── */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      background: #f0f2f5;
+    }
+
+    /* ── Breadcrumb ──────────────────────────────────────── */
+    .breadcrumb {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 16px;
+    }
+
+    .breadcrumb a { color: #0066CC; text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb span { margin: 0 6px; }
+
+    /* ── Client header card ──────────────────────────────── */
+    .client-header {
+      background: #fff;
+      border: 1px solid #dde1e7;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .client-avatar {
+      width: 56px; height: 56px;
+      background: linear-gradient(135deg, #0066CC, #004a99);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .client-meta { flex: 1; }
+
+    .client-meta h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+    }
+
+    .client-meta .meta-row {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .meta-item {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .meta-item strong { color: #333; font-weight: 600; }
+
+    .client-badges {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    .badge-active { background: #d4edda; color: #155724; }
+    .badge-balanced { background: #d1ecf1; color: #0c5460; }
+
+    .total-value-display {
+      text-align: right;
+    }
+
+    .total-value-display .label { font-size: 11px; color: #888; }
+    .total-value-display .value {
+      font-size: 22px;
+      font-weight: 700;
+      color: #0066CC;
+    }
+
+    /* ── Tab bar ──────────────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #dde1e7;
+    }
+
+    .tab-bar a {
+      text-decoration: none;
+      color: #666;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 10px 20px;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.15s;
+    }
+
+    .tab-bar a.active { color: #0066CC; border-bottom-color: #0066CC; font-weight: 600; }
+    .tab-bar a:hover { color: #0066CC; }
+
+    /* ── Cards ───────────────────────────────────────────── */
+    .card {
+      background: #fff;
+      border: 1px solid #dde1e7;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid #eef0f3;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-header h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+
+    .card-header .card-actions a {
+      font-size: 12px;
+      color: #0066CC;
+      text-decoration: none;
+    }
+
+    .card-body { padding: 20px; }
+
+    /* ── Detail grid ─────────────────────────────────────── */
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .detail-item .dl { font-size: 11px; color: #888; font-weight: 500; margin-bottom: 3px; }
+    .detail-item .dv { font-size: 13px; color: #1a1a2e; font-weight: 500; }
+
+    /* ── Holdings table ──────────────────────────────────── */
+    .holdings-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .holdings-table thead th {
+      background: #f7f8fa;
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
+      border-bottom: 1px solid #dde1e7;
+    }
+
+    .holdings-table tbody tr {
+      border-bottom: 1px solid #f0f2f5;
+      transition: background 0.1s;
+    }
+
+    .holdings-table tbody tr:hover { background: #fafbfc; }
+    .holdings-table tbody tr:last-child { border-bottom: none; }
+
+    .holdings-table td {
+      padding: 11px 14px;
+      vertical-align: middle;
+    }
+
+    .holdings-table td.value-cell {
+      font-weight: 600;
+      color: #1a1a2e;
+      text-align: right;
+    }
+
+    .holdings-table tfoot td {
+      padding: 12px 14px;
+      border-top: 2px solid #dde1e7;
+      background: #f7f8fa;
+      font-weight: 700;
+    }
+
+    .holdings-table tfoot td.total-label {
+      color: #666;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .holdings-table tfoot td.total-value {
+      text-align: right;
+      color: #0066CC;
+      font-size: 15px;
+    }
+
+    /* Wrapper type pills */
+    .wrapper-pill {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 3px;
+      letter-spacing: 0.3px;
+    }
+
+    .wrapper-sipp { background: #e8f0fe; color: #1a73e8; }
+    .wrapper-isa { background: #e6f4ea; color: #137333; }
+    .wrapper-gia { background: #fce8b2; color: #a37c00; }
+    .wrapper-workplace { background: #f3e8fd; color: #7b1fa2; }
+    .wrapper-premium { background: #fce4ec; color: #c62828; }
+
+    .status-pill {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #d4edda;
+      color: #155724;
+    }
+
+    /* ── Tax year grid ────────────────────────────────────── */
+    .tax-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .tax-item {
+      background: #f7f8fa;
+      border: 1px solid #eef0f3;
+      border-radius: 6px;
+      padding: 12px 16px;
+    }
+
+    .tax-item .ti-label {
+      font-size: 11px;
+      color: #888;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+
+    .tax-item .ti-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+
+    .tax-item .ti-sub {
+      font-size: 12px;
+      color: #555;
+      margin-top: 4px;
+    }
+
+    /* ── Notes ───────────────────────────────────────────── */
+    .notes-list {
+      list-style: none;
+    }
+
+    .notes-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f2f5;
+      font-size: 13px;
+      color: #333;
+    }
+
+    .notes-list li:last-child { border-bottom: none; }
+
+    .notes-list li::before {
+      content: '•';
+      color: #0066CC;
+      font-weight: bold;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .note-text[data-field] { display: inline; }
+
+    /* ── Two-column layout ───────────────────────────────── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    /* ── Footer status bar ───────────────────────────────── */
+    .statusbar {
+      background: #1c2b4a;
+      color: #7a8fad;
+      font-size: 11px;
+      padding: 5px 24px;
+      display: flex;
+      gap: 24px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <nav class="topnav">
+    <div class="brand">intelliflo <span>office</span></div>
+    <div class="topnav-links">
+      <a href="#">Dashboard</a>
+      <a href="#">Clients</a>
+      <a href="#">Reports</a>
+      <a href="#">Compliance</a>
+      <a href="#">Tools</a>
+    </div>
+    <div class="topnav-right">
+      <div class="user-info">James Mitchell<br>Senior Adviser</div>
+      <div class="user-badge">JM</div>
+    </div>
+  </nav>
+
+  <!-- Body -->
+  <div class="layout">
+
+    <!-- Left Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Main Menu</div>
+        <a href="#"><span class="icon">⊞</span> Dashboard</a>
+        <a href="#" class="active"><span class="icon">👤</span> Clients</a>
+        <a href="#"><span class="icon">📋</span> Policies</a>
+        <a href="#"><span class="icon">📊</span> Reports</a>
+        <a href="#"><span class="icon">✓</span> Tasks</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tools</div>
+        <a href="#"><span class="icon">🧮</span> Cashflow</a>
+        <a href="#"><span class="icon">📄</span> Documents</a>
+        <a href="#"><span class="icon">📬</span> Letters</a>
+        <a href="#"><span class="icon">⚙</span> Settings</a>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main">
+
+      <div class="breadcrumb">
+        <a href="#">Clients</a> <span>›</span> <strong>Margaret &amp; David Thompson</strong>
+      </div>
+
+      <!-- Client Header Card -->
+      <div class="client-header">
+        <div class="client-avatar">MT</div>
+        <div class="client-meta">
+          <h1 data-field="client-name">Margaret &amp; David Thompson</h1>
+          <div class="meta-row">
+            <div class="meta-item">
+              <strong>Address:</strong>
+              <span data-field="client-address">14 Oakwood Drive, Cheltenham, GL50 3RQ</span>
+            </div>
+            <div class="meta-item">
+              <strong>Adviser:</strong>
+              <span data-field="adviser">James Mitchell</span>
+            </div>
+            <div class="meta-item">
+              <strong>Client Ref:</strong>
+              <span data-field="client-ref">MT-2019-0441</span>
+            </div>
+          </div>
+          <div class="meta-row">
+            <div class="meta-item">
+              <strong>Margaret DOB:</strong>
+              <span data-field="dob-margaret">15/03/1962</span>
+            </div>
+            <div class="meta-item">
+              <strong>David DOB:</strong>
+              <span data-field="dob-david">22/08/1959</span>
+            </div>
+            <div class="meta-item">
+              <strong>Last Review:</strong>
+              <span data-field="review-date">15/01/2026</span>
+            </div>
+            <div class="meta-item">
+              <strong>Next Review:</strong>
+              <span data-field="next-review">15/01/2027</span>
+            </div>
+          </div>
+        </div>
+        <div class="client-badges">
+          <span class="badge badge-active">Active</span>
+          <span class="badge badge-balanced" data-field="risk-profile">Balanced (6/10)</span>
+          <div class="total-value-display">
+            <div class="label">Total Portfolio</div>
+            <div class="value" data-field="total-value">£1,282,500</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="tab-bar">
+        <a href="#" class="active">Overview</a>
+        <a href="#">Policies</a>
+        <a href="#">Documents</a>
+        <a href="#">Tasks</a>
+        <a href="#">Fact Find</a>
+        <a href="#">Risk</a>
+      </div>
+
+      <!-- Holdings Card -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Holdings &amp; Policies</h2>
+          <div class="card-actions"><a href="#">View All</a></div>
+        </div>
+        <table class="holdings-table" id="holdings-table">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Type</th>
+              <th>Wrapper</th>
+              <th>Owner</th>
+              <th style="text-align:right">Current Value</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="holdings-body">
+            <tr class="policy-row" data-wrapper-type="SIPP" data-policy-type="Pension" data-owner="Margaret">
+              <td data-field="provider">Aviva</td>
+              <td data-field="policy-type">Pension</td>
+              <td><span class="wrapper-pill wrapper-sipp" data-field="wrapper">SIPP</span></td>
+              <td>Margaret</td>
+              <td class="value-cell" data-field="value" data-raw-value="487200">£487,200</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+            <tr class="policy-row" data-wrapper-type="SIPP" data-policy-type="Pension" data-owner="David">
+              <td data-field="provider">Aviva</td>
+              <td data-field="policy-type">Pension</td>
+              <td><span class="wrapper-pill wrapper-sipp" data-field="wrapper">SIPP</span></td>
+              <td>David</td>
+              <td class="value-cell" data-field="value" data-raw-value="312800">£312,800</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+            <tr class="policy-row" data-wrapper-type="S&S ISA" data-policy-type="ISA" data-owner="Margaret">
+              <td data-field="provider">Fidelity</td>
+              <td data-field="policy-type">ISA</td>
+              <td><span class="wrapper-pill wrapper-isa" data-field="wrapper">S&amp;S ISA</span></td>
+              <td>Margaret</td>
+              <td class="value-cell" data-field="value" data-raw-value="142600">£142,600</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+            <tr class="policy-row" data-wrapper-type="S&S ISA" data-policy-type="ISA" data-owner="David">
+              <td data-field="provider">Fidelity</td>
+              <td data-field="policy-type">ISA</td>
+              <td><span class="wrapper-pill wrapper-isa" data-field="wrapper">S&amp;S ISA</span></td>
+              <td>David</td>
+              <td class="value-cell" data-field="value" data-raw-value="98400">£98,400</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+            <tr class="policy-row" data-wrapper-type="GIA" data-policy-type="GIA" data-owner="Joint">
+              <td data-field="provider">AJ Bell</td>
+              <td data-field="policy-type">GIA</td>
+              <td><span class="wrapper-pill wrapper-gia" data-field="wrapper">GIA</span></td>
+              <td>Joint</td>
+              <td class="value-cell" data-field="value" data-raw-value="67500">£67,500</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+            <tr class="policy-row" data-wrapper-type="Workplace" data-policy-type="Pension" data-owner="David">
+              <td data-field="provider">Scottish Widows</td>
+              <td data-field="policy-type">Pension</td>
+              <td><span class="wrapper-pill wrapper-workplace" data-field="wrapper">Workplace</span></td>
+              <td>David</td>
+              <td class="value-cell" data-field="value" data-raw-value="124000">£124,000</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+            <tr class="policy-row" data-wrapper-type="Premium Bonds" data-policy-type="Cash" data-owner="Margaret">
+              <td data-field="provider">NS&amp;I</td>
+              <td data-field="policy-type">Cash</td>
+              <td><span class="wrapper-pill wrapper-premium" data-field="wrapper">Premium Bonds</span></td>
+              <td>Margaret</td>
+              <td class="value-cell" data-field="value" data-raw-value="50000">£50,000</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4" class="total-label">Total Portfolio Value</td>
+              <td class="total-value" data-field="portfolio-total" data-raw-value="1282500">£1,282,500</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Two-column: Tax Year Activity + Client Details -->
+      <div class="two-col">
+
+        <!-- Tax Year Activity -->
+        <div class="card">
+          <div class="card-header">
+            <h2>Current Tax Year Activity</h2>
+          </div>
+          <div class="card-body">
+            <div style="font-size:11px; color:#888; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;" data-field="tax-year">2025/26 Tax Year</div>
+            <div class="tax-grid">
+              <div class="tax-item">
+                <div class="ti-label">ISA Contributions</div>
+                <div class="ti-value">£26,000</div>
+                <div class="ti-sub">
+                  <span data-field="isa-contrib-margaret">Margaret: £14,200</span><br>
+                  <span data-field="isa-contrib-david">David: £11,800</span>
+                </div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Pension Contributions</div>
+                <div class="ti-value">£60,500</div>
+                <div class="ti-sub">
+                  <span data-field="pension-contrib-margaret">Margaret: £32,000</span><br>
+                  <span data-field="pension-contrib-david">David: £28,500</span>
+                </div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Estimated Capital Gains (GIA)</div>
+                <div class="ti-value" data-field="capital-gains">£8,400</div>
+                <div class="ti-sub">Unrealised gains this year</div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Dividend Income</div>
+                <div class="ti-value" data-field="dividend-income">£3,200</div>
+                <div class="ti-sub">From GIA holdings</div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Salary / Employment</div>
+                <div class="ti-value">£120,000</div>
+                <div class="ti-sub">
+                  <span data-field="salary-margaret">Margaret: £52,000</span><br>
+                  <span data-field="salary-david">David: £68,000</span>
+                </div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Carry Forward Available</div>
+                <div class="ti-value" data-field="carry-forward-david">David: £18,000</div>
+                <div class="ti-sub">From 2022/23 (unused)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Client Details & Notes -->
+        <div>
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h2>Client Details</h2></div>
+            <div class="card-body">
+              <div class="detail-grid">
+                <div class="detail-item">
+                  <div class="dl">Relationship</div>
+                  <div class="dv">Joint / Couple</div>
+                </div>
+                <div class="detail-item">
+                  <div class="dl">Service Level</div>
+                  <div class="dv">Full Advice</div>
+                </div>
+                <div class="detail-item">
+                  <div class="dl">Fee Basis</div>
+                  <div class="dv">Ongoing 0.75%</div>
+                </div>
+                <div class="detail-item">
+                  <div class="dl">Margaret Age</div>
+                  <div class="dv" data-field="age-margaret">63</div>
+                </div>
+                <div class="detail-item">
+                  <div class="dl">David Age</div>
+                  <div class="dv" data-field="age-david">66</div>
+                </div>
+                <div class="detail-item">
+                  <div class="dl">Review Frequency</div>
+                  <div class="dv">Annual</div>
+                </div>
+                <div class="detail-item">
+                  <div class="dl">IHT Estimate</div>
+                  <div class="dv" data-field="iht-estate">£1.85m</div>
+                </div>
+                <div class="detail-item">
+                  <div class="dl">Marginal Rate</div>
+                  <div class="dv">Higher Rate</div>
+                </div>
+                <div class="detail-item">
+                  <div class="dl">Risk Profile</div>
+                  <div class="dv" data-field="risk-profile-detail">Balanced (6/10)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h2>Adviser Notes</h2></div>
+            <div class="card-body">
+              <ul class="notes-list" id="notes-list">
+                <li><span class="note-text" data-field="note">Margaret considering retirement in 2027</span></li>
+                <li><span class="note-text" data-field="note">David has carry forward from 2022/23 (£18,000 unused)</span></li>
+                <li><span class="note-text" data-field="note">Annual review completed 15/01/2026</span></li>
+                <li><span class="note-text" data-field="note">Discussed IHT planning — combined estate estimated at £1.85m</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /two-col -->
+
+    </main>
+  </div>
+
+  <!-- Status Bar -->
+  <div class="statusbar">
+    <span>intelliflo office v8.4.2</span>
+    <span>|</span>
+    <span>Mitchell Financial Planning</span>
+    <span>|</span>
+    <span>FCA 123456</span>
+    <span>|</span>
+    <span>Last sync: 01/03/2026 09:14</span>
+  </div>
+
+</body>
+</html>
