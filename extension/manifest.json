@@ -31,7 +31,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*/*", "file://*/*"],
+      "matches": ["*://*/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
