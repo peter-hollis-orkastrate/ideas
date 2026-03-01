@@ -165,16 +165,35 @@ function renderSummary() {
   document.getElementById('tax-year-label').textContent = d.taxYear.year ? `(${d.taxYear.year})` : '';
 
   const ty = d.taxYear;
-  document.getElementById('ty-isa').innerHTML =
-    `M: ${fmt(ty.isaContributions.margaret)}<br>D: ${fmt(ty.isaContributions.david)}`;
-  document.getElementById('ty-pension').innerHTML =
-    `M: ${fmt(ty.pensionContributions.margaret)}<br>D: ${fmt(ty.pensionContributions.david)}`;
+  const p1 = d.client.person1Name || 'Client 1';
+  const p2 = d.client.person2Name || '';
+  const isCouple = d.client.clientType === 'couple' && !!p2;
+
+  const p1Init = p1.charAt(0);
+  const p2Init = p2.charAt(0);
+
+  document.getElementById('ty-isa').innerHTML = isCouple
+    ? `${p1Init}: ${fmt(ty.isaContributions.margaret)}<br>${p2Init}: ${fmt(ty.isaContributions.david)}`
+    : fmt(ty.isaContributions.margaret);
+  document.getElementById('ty-pension').innerHTML = isCouple
+    ? `${p1Init}: ${fmt(ty.pensionContributions.margaret)}<br>${p2Init}: ${fmt(ty.pensionContributions.david)}`
+    : fmt(ty.pensionContributions.margaret);
   document.getElementById('ty-cgt').textContent = fmt(ty.estimatedCapitalGains);
   document.getElementById('ty-dividend').textContent = fmt(ty.dividendIncome);
-  document.getElementById('ty-salary').innerHTML =
-    `M: ${fmt(ty.salary.margaret)}<br>D: ${fmt(ty.salary.david)}`;
-  document.getElementById('ty-carry').textContent =
-    ty.carryForward.david ? `David: ${fmt(ty.carryForward.david)}` : '—';
+  document.getElementById('ty-salary').innerHTML = isCouple
+    ? `${p1Init}: ${fmt(ty.salary.margaret)}<br>${p2Init}: ${fmt(ty.salary.david)}`
+    : fmt(ty.salary.margaret);
+
+  const p1Carry = ty.carryForward.margaret;
+  const p2Carry = ty.carryForward.david;
+  if (p1Carry || p2Carry) {
+    const parts = [];
+    if (p1Carry) parts.push(`${p1}: ${fmt(p1Carry)}`);
+    if (isCouple && p2Carry) parts.push(`${p2}: ${fmt(p2Carry)}`);
+    document.getElementById('ty-carry').textContent = parts.join(', ');
+  } else {
+    document.getElementById('ty-carry').textContent = '—';
+  }
 
   // Holdings grouped
   renderHoldingsGrouped(d.holdings);
@@ -267,81 +286,182 @@ function calculateObservations(data, rules) {
   const obs = [];
   const ty = data.taxYear;
 
+  // Person names and couple/individual flag
+  const p1 = data.client.person1Name || 'Client 1';
+  const p2 = data.client.person2Name || '';
+  const isCouple = data.client.clientType === 'couple' && !!p2;
+
   // ── 1. ISA Allowance ──────────────────────────────────────
   {
-    const allowance = rules.isa.annual_allowance; // 20000
-    const mUsed = ty.isaContributions.margaret;
-    const dUsed = ty.isaContributions.david;
-    const mRemaining = allowance - mUsed;
-    const dRemaining = allowance - dUsed;
-    const mPct = pct(mUsed, allowance);
-    const dPct = pct(dUsed, allowance);
-    const worstPct = Math.max(mPct, dPct);
-    const sev = severity(worstPct, rules);
+    const allowance = rules.isa.annual_allowance;
+    const p1Used = ty.isaContributions.margaret;
+    const p1Remaining = allowance - p1Used;
+    const p1Pct = pct(p1Used, allowance);
+
+    let sev, summary, workings;
+
+    if (isCouple) {
+      const p2Used = ty.isaContributions.david;
+      const p2Remaining = allowance - p2Used;
+      const p2Pct = pct(p2Used, allowance);
+      const worstPct = Math.max(p1Pct, p2Pct);
+      sev = severity(worstPct, rules);
+
+      if (p1Pct >= 100 && p2Pct >= 100) {
+        summary = `Both ${p1} and ${p2} have fully used their ${fmt(allowance)} ISA allowance this tax year. No further subscriptions are possible before 5 April.`;
+      } else if (p1Pct >= 100) {
+        summary = `${p1}'s ISA allowance is fully used. ${p2} has ${fmt(p2Remaining)} (${100 - p2Pct}% unused) remaining before 5 April.`;
+      } else if (p2Pct >= 100) {
+        summary = `${p2}'s ISA allowance is fully used. ${p1} has ${fmt(p1Remaining)} (${100 - p1Pct}% unused) remaining before 5 April.`;
+      } else {
+        summary = `${p1} has ${fmt(p1Remaining)} remaining (${100 - p1Pct}% unused). ${p2} has ${fmt(p2Remaining)} remaining (${100 - p2Pct}% unused). Both have unused allowance before 5 April.`;
+      }
+      workings =
+        `Annual ISA allowance:    ${fmt(allowance)}\n` +
+        `${p1.padEnd(16)} ${fmt(p1Used)} contributed (${p1Pct}% used)\n` +
+        `${('  remaining:').padEnd(16)} ${fmt(p1Remaining)}\n` +
+        `${p2.padEnd(16)} ${fmt(p2Used)} contributed (${p2Pct}% used)\n` +
+        `${('  remaining:').padEnd(16)} ${fmt(p2Remaining)}`;
+    } else {
+      sev = severity(p1Pct, rules);
+      if (p1Pct >= 100) {
+        summary = `${p1}'s ${fmt(allowance)} ISA allowance is fully used. No further subscriptions are possible this tax year.`;
+      } else {
+        summary = `${p1} has ${fmt(p1Remaining)} remaining (${100 - p1Pct}% unused) before 5 April.`;
+      }
+      workings =
+        `Annual ISA allowance:    ${fmt(allowance)}\n` +
+        `${p1} contributed:       ${fmt(p1Used)} (${p1Pct}% used)\n` +
+        `Remaining:               ${fmt(p1Remaining)}`;
+    }
 
     obs.push({
       title: 'ISA Allowance',
       severity: sev,
-      summary: `Margaret has ${fmt(mRemaining)} remaining (${100 - mPct}% unused). David has ${fmt(dRemaining)} remaining (${100 - dPct}% unused). Both have unused ISA allowance before 5 April.`,
-      workings:
-        `Annual ISA allowance:    ${fmt(allowance)}\n` +
-        `Margaret contributed:    ${fmt(mUsed)} (${mPct}% used)\n` +
-        `Margaret remaining:      ${fmt(mRemaining)}\n` +
-        `David contributed:       ${fmt(dUsed)} (${dPct}% used)\n` +
-        `David remaining:         ${fmt(dRemaining)}`,
+      summary,
+      workings,
       source: `HMRC: ISA Annual Subscription Limit ${rules.tax_year}`
     });
   }
 
-  // ── 2. Pension Annual Allowance ───────────────────────────
+  // ── 2. Pension Annual Allowance (with taper check) ────────
   {
-    const allowance = rules.pensions.annual_allowance; // 60000
-    const mUsed = ty.pensionContributions.margaret;
-    const dUsed = ty.pensionContributions.david;
-    const dCarry = (ty.carryForward && ty.carryForward.david) || 18000;
-    const mPct = pct(mUsed, allowance);
-    const dPct = pct(dUsed, allowance);
-    const worstPct = Math.max(mPct, dPct);
-    const sev = severity(worstPct, rules);
-    const mRemaining = allowance - mUsed;
-    const dRemaining = allowance - dUsed;
-    const dTotalCapacity = dRemaining + dCarry;
+    const standardAA = rules.pensions.annual_allowance;
+    const taperThreshold = rules.pensions.tapered_annual_allowance;
+    const minAA = taperThreshold.minimum_allowance;
+
+    // Calculate effective annual allowance — taper applies if adjustedIncome > £260k
+    const adjustedIncome = ty.adjustedIncome;
+    let effectiveAA = standardAA;
+    let taperNote = '';
+    let taperApplied = false;
+
+    if (adjustedIncome && adjustedIncome > taperThreshold.adjusted_income) {
+      const reduction = Math.floor((adjustedIncome - taperThreshold.adjusted_income) / 2);
+      effectiveAA = Math.max(minAA, standardAA - reduction);
+      taperNote = `\nTaper: adjusted income ${fmt(adjustedIncome)} > ${fmt(taperThreshold.adjusted_income)} threshold\n` +
+                  `Reduction = (${fmt(adjustedIncome)} − ${fmt(taperThreshold.adjusted_income)}) ÷ 2 = ${fmt(reduction)}\n` +
+                  `Effective annual allowance:  ${fmt(effectiveAA)}`;
+      taperApplied = true;
+    }
+
+    const p1Used = ty.pensionContributions.margaret;
+    const p1Remaining = effectiveAA - p1Used;
+    const p1Pct = pct(p1Used, effectiveAA);
+    const p1Carry = ty.carryForward.margaret || 0;
+    const p1Exceeded = p1Used > effectiveAA;
+
+    let sev, summary, workings;
+
+    if (isCouple) {
+      const p2Used = ty.pensionContributions.david;
+      const p2Remaining = effectiveAA - p2Used;
+      const p2Pct = pct(p2Used, effectiveAA);
+      const p2Carry = ty.carryForward.david || 0;
+      const p2Exceeded = p2Used > effectiveAA;
+      const worstPct = Math.max(p1Pct, p2Pct);
+      sev = (p1Exceeded || p2Exceeded) ? 'red' : severity(worstPct, rules);
+
+      if (p1Exceeded || p2Exceeded) {
+        const exceeded = [];
+        if (p1Exceeded) exceeded.push(`${p1} has exceeded by ${fmt(p1Used - effectiveAA)}`);
+        if (p2Exceeded) exceeded.push(`${p2} has exceeded by ${fmt(p2Used - effectiveAA)}`);
+        summary = `Pension annual allowance exceeded. ${exceeded.join('; ')}. An annual allowance charge may apply — consider carry forward if available.`;
+      } else {
+        const carryParts = [];
+        if (p1Carry) carryParts.push(`${p1}: ${fmt(p1Carry)}`);
+        if (p2Carry) carryParts.push(`${p2}: ${fmt(p2Carry)}`);
+        summary = `Both clients have pension allowance remaining this year.${carryParts.length ? ` Carry forward available: ${carryParts.join(', ')}.` : ''}`;
+      }
+      workings =
+        `Annual allowance:        ${fmt(effectiveAA)}${taperApplied ? ' (tapered)' : ''}\n` +
+        `${p1.padEnd(16)} ${fmt(p1Used)} contributed (${p1Pct}%)${p1Exceeded ? ' ⚠ EXCEEDED' : ''}\n` +
+        `${('  remaining:').padEnd(16)} ${fmt(Math.max(0, p1Remaining))}${p1Carry ? `  (carry fwd: ${fmt(p1Carry)})` : ''}\n` +
+        `${p2.padEnd(16)} ${fmt(p2Used)} contributed (${p2Pct}%)${p2Exceeded ? ' ⚠ EXCEEDED' : ''}\n` +
+        `${('  remaining:').padEnd(16)} ${fmt(Math.max(0, p2Remaining))}${p2Carry ? `  (carry fwd: ${fmt(p2Carry)})` : ''}` +
+        taperNote;
+    } else {
+      sev = p1Exceeded ? 'red' : severity(p1Pct, rules);
+      if (p1Exceeded) {
+        const excessAmt = p1Used - effectiveAA;
+        summary = `${p1}'s pension contributions of ${fmt(p1Used)} exceed the ${taperApplied ? 'tapered ' : ''}annual allowance of ${fmt(effectiveAA)} by ${fmt(excessAmt)}. An annual allowance charge may apply.`;
+      } else {
+        summary = `${p1} has used ${p1Pct}% of the ${taperApplied ? 'tapered ' : ''}annual allowance. ${fmt(Math.max(0, p1Remaining))} remaining.${p1Carry ? ` Carry forward of ${fmt(p1Carry)} also available.` : ''}`;
+      }
+      workings =
+        `Annual allowance:        ${fmt(effectiveAA)}${taperApplied ? ' (tapered)' : ''}\n` +
+        `${p1} contributed:       ${fmt(p1Used)} (${p1Pct}%)${p1Exceeded ? ' ⚠ EXCEEDED' : ''}\n` +
+        `Remaining:               ${fmt(Math.max(0, p1Remaining))}${p1Carry ? `  (carry fwd: ${fmt(p1Carry)})` : ''}` +
+        taperNote;
+    }
 
     obs.push({
       title: 'Pension Annual Allowance',
       severity: sev,
-      summary: `Both clients have significant pension allowance remaining. David also has ${fmt(dCarry)} carry forward available from 2022/23, giving total capacity of ${fmt(dTotalCapacity)}.`,
-      workings:
-        `Annual allowance:        ${fmt(allowance)}\n` +
-        `Margaret contributed:    ${fmt(mUsed)} (${mPct}%)\n` +
-        `Margaret remaining:      ${fmt(mRemaining)}\n` +
-        `David contributed:       ${fmt(dUsed)} (${dPct}%)\n` +
-        `David remaining:         ${fmt(dRemaining)}\n` +
-        `David carry forward:     ${fmt(dCarry)} (2022/23 unused)\n` +
-        `David total capacity:    ${fmt(dTotalCapacity)}`,
+      summary,
+      workings,
       source: `HMRC: Pension Annual Allowance ${rules.tax_year}`
     });
   }
 
   // ── 3. Capital Gains Tax ──────────────────────────────────
   {
-    const exemptAmount = rules.capital_gains_tax.annual_exempt_amount; // 3000
-    const gains = ty.estimatedCapitalGains; // 8400
+    const exemptAmount = rules.capital_gains_tax.annual_exempt_amount;
+    const gains = ty.estimatedCapitalGains;
     const taxableGain = Math.max(0, gains - exemptAmount);
-    const cgtRate = rules.capital_gains_tax.higher_rate; // 20% (David higher rate)
+
+    // Use higher rate unless all income is basic rate
+    const higherThreshold = rules.income_tax.higher_rate_threshold;
+    const p1AdditionalRate = ty.salary.margaret > rules.income_tax.additional_rate_threshold;
+    const p1HigherRate = p1AdditionalRate || ty.salary.margaret > higherThreshold;
+    const anyHigherRate = p1HigherRate || (isCouple && ty.salary.david > higherThreshold);
+
+    const cgtRate = anyHigherRate
+      ? rules.capital_gains_tax.higher_rate
+      : rules.capital_gains_tax.basic_rate;
+    const rateLabel = anyHigherRate ? 'higher/additional rate' : 'basic rate';
     const liability = Math.round(taxableGain * cgtRate / 100);
     const usedPct = pct(gains, exemptAmount);
     const sev = gains > exemptAmount ? 'red' : severity(usedPct, rules);
 
+    let summary;
+    if (gains === 0) {
+      summary = `No estimated capital gains this tax year. Annual exempt amount of ${fmt(exemptAmount)} is fully available.`;
+    } else if (taxableGain === 0) {
+      summary = `Estimated gains of ${fmt(gains)} are within the ${fmt(exemptAmount)} annual exempt amount. No CGT liability expected.`;
+    } else {
+      summary = `Estimated gains of ${fmt(gains)} exceed the ${fmt(exemptAmount)} annual exempt amount. Taxable gain of ${fmt(taxableGain)}. Estimated CGT liability of ${fmt(liability)} at ${rateLabel} (${cgtRate}%). Consider bed & ISA or timing of disposals.`;
+    }
+
     obs.push({
       title: 'Capital Gains Tax',
       severity: sev,
-      summary: `Estimated gains of ${fmt(gains)} exceed the ${fmt(exemptAmount)} annual exempt amount. Taxable gain of ${fmt(taxableGain)}. Estimated CGT liability of ${fmt(liability)} at higher rate (20%). Consider bed & ISA or timing of disposals.`,
+      summary,
       workings:
         `Estimated gains (GIA):   ${fmt(gains)}\n` +
         `Annual exempt amount:    ${fmt(exemptAmount)}\n` +
         `Taxable gain:            ${fmt(taxableGain)}\n` +
-        `CGT rate (higher rate):  ${cgtRate}%\n` +
+        `CGT rate (${rateLabel}):  ${cgtRate}%\n` +
         `Estimated liability:     ${fmt(liability)}`,
       source: `HMRC: CGT Annual Exempt Amount ${rules.tax_year}`
     });
@@ -349,88 +469,172 @@ function calculateObservations(data, rules) {
 
   // ── 4. Dividend Allowance ─────────────────────────────────
   {
-    const allowance = rules.dividends.allowance; // 500
-    const dividends = ty.dividendIncome; // 3200
+    const allowance = rules.dividends.allowance;
+    const dividends = ty.dividendIncome;
     const taxableDividends = Math.max(0, dividends - allowance);
-    const divRate = rules.dividends.higher_rate; // 33.75%
+
+    // Dividend rate depends on income tax band
+    const higherThreshold = rules.income_tax.higher_rate_threshold;
+    const additionalThreshold = rules.income_tax.additional_rate_threshold;
+    const p1Salary = ty.salary.margaret;
+    const divRate = p1Salary > additionalThreshold
+      ? rules.dividends.additional_rate
+      : p1Salary > higherThreshold
+        ? rules.dividends.higher_rate
+        : rules.dividends.basic_rate;
+    const rateLabel = p1Salary > additionalThreshold ? 'additional rate'
+      : p1Salary > higherThreshold ? 'higher rate' : 'basic rate';
+
     const liability = Math.round(taxableDividends * divRate / 100);
     const usedPct = pct(dividends, allowance);
     const sev = dividends > allowance ? 'amber' : severity(usedPct, rules);
 
+    let summary;
+    if (dividends <= allowance) {
+      summary = `Dividend income of ${fmt(dividends)} is within the ${fmt(allowance)} annual allowance. ${fmt(allowance - dividends)} of allowance remaining.`;
+    } else {
+      summary = `Dividend income of ${fmt(dividends)} exceeds the ${fmt(allowance)} allowance. ${fmt(taxableDividends)} taxable at ${rateLabel} dividend rate (${divRate}%). Consider moving income-producing assets into an ISA or pension.`;
+    }
+
     obs.push({
       title: 'Dividend Allowance',
       severity: sev,
-      summary: `Dividend income of ${fmt(dividends)} exceeds the ${fmt(allowance)} annual allowance. ${fmt(taxableDividends)} taxable at higher rate dividend rate. Consider moving income-producing assets into ISA or pension wrapper to reduce dividend exposure.`,
+      summary,
       workings:
         `Dividend income:         ${fmt(dividends)}\n` +
         `Dividend allowance:      ${fmt(allowance)}\n` +
         `Taxable dividends:       ${fmt(taxableDividends)}\n` +
-        `Higher rate div. rate:   ${divRate}%\n` +
+        `${rateLabel} div. rate:  ${divRate}%\n` +
         `Estimated liability:     ${fmt(liability)}`,
       source: `HMRC: Dividend Allowance ${rules.tax_year}`
     });
   }
 
-  // ── 5. IHT Exposure ──────────────────────────────────────
+  // ── 5. IHT Exposure ───────────────────────────────────────
   {
     const iht = rules.inheritance_tax;
-    const estate = data.ihtEstimate || 1850000;
-    const nilRateBands = iht.nil_rate_band * 2;       // 650,000 (joint couple)
-    const rnrbBands = iht.residence_nil_rate_band * 2; // 350,000
-    // No taper — estate £1.85m < £2m threshold
-    const totalExempt = nilRateBands + rnrbBands; // 1,000,000
+    const estate = data.ihtEstimate || 0;
+    const bandCount = isCouple ? 2 : 1;
+
+    const nilRateBands = iht.nil_rate_band * bandCount;
+    // RNRB taper: reduced by £1 per £2 estate exceeds £2m
+    const fullRnrb = iht.residence_nil_rate_band * bandCount;
+    const taperOver = Math.max(0, estate - iht.residence_nil_rate_taper_threshold);
+    const rnrbReduction = Math.floor(taperOver / 2);
+    const effectiveRnrb = Math.max(0, fullRnrb - rnrbReduction);
+    const totalExempt = nilRateBands + effectiveRnrb;
     const chargeable = Math.max(0, estate - totalExempt);
     const liability = Math.round(chargeable * iht.rate / 100);
     const sev = liability > 0 ? 'red' : 'green';
-    const taperedNote = estate > iht.residence_nil_rate_taper_threshold
-      ? '\nNote: Estate above taper threshold — RNRB may be reduced.'
-      : '\nNote: Estate below £2m taper threshold — full RNRB available.';
+
+    const estateStr = estate >= 1000000
+      ? `£${(estate / 1000000).toFixed(2)}m`
+      : fmt(estate);
+    const entityLabel = isCouple ? 'Combined estate' : 'Estate';
+    const nrbLabel = isCouple ? `Nil-rate bands (×2):` : `Nil-rate band:`;
+    const rnrbLabel = isCouple ? `RNRB (×2):` : `RNRB:`;
+
+    let rnrbNote = '';
+    if (rnrbReduction > 0) {
+      rnrbNote = `\nRNRB taper: estate ${estateStr} > ${fmt(iht.residence_nil_rate_taper_threshold)}\n` +
+                 `Reduction = (${estateStr} − £2m) ÷ 2 = ${fmt(rnrbReduction)}\n` +
+                 `Effective RNRB:          ${fmt(effectiveRnrb)}`;
+    }
+
+    let summary;
+    if (liability === 0) {
+      summary = `${entityLabel} of ${estateStr} is within the available nil-rate bands (${fmt(totalExempt)}). No IHT liability expected.`;
+    } else {
+      summary = `${entityLabel} of ${estateStr} gives a potential IHT liability of ${fmt(liability)}. ${rnrbReduction > 0 ? 'RNRB is reduced by the estate taper. ' : ''}IHT planning recommended.`;
+    }
 
     obs.push({
       title: 'Inheritance Tax Exposure',
       severity: sev,
-      summary: `Combined estate of £${(estate / 1000000).toFixed(2)}m gives a potential IHT liability of ${fmt(liability)}. Comprehensive IHT planning recommended.`,
+      summary,
       workings:
-        `Combined estate:         £${(estate / 1000000).toFixed(2)}m\n` +
-        `Nil-rate bands (×2):     ${fmt(nilRateBands)}\n` +
-        `RNRB (×2):               ${fmt(rnrbBands)}\n` +
+        `${entityLabel}:          ${estateStr}\n` +
+        `${nrbLabel.padEnd(25)}${fmt(nilRateBands)}\n` +
+        `${rnrbLabel.padEnd(25)}${fmt(effectiveRnrb)}${rnrbReduction > 0 ? ' (tapered)' : ''}\n` +
         `Total exempt:            ${fmt(totalExempt)}\n` +
         `Potentially chargeable:  ${fmt(chargeable)}\n` +
         `IHT rate:                ${iht.rate}%\n` +
         `Estimated IHT:           ${fmt(liability)}` +
-        taperedNote,
+        rnrbNote,
       source: `HMRC: Inheritance Tax Nil Rate Band ${rules.tax_year}`
     });
   }
 
-  // ── 6. Higher Rate Tax & Pension Efficiency ──────────────
+  // ── 6. Income Tax Band & Pension Efficiency ───────────────
   {
-    const higherThreshold = rules.income_tax.higher_rate_threshold; // 50270
-    const mSalary = ty.salary.margaret;
-    const dSalary = ty.salary.david;
-    const mHigherRate = mSalary > higherThreshold;
-    const dHigherRate = dSalary > higherThreshold;
+    const higherThreshold   = rules.income_tax.higher_rate_threshold;   // 50,270
+    const additionalThreshold = rules.income_tax.additional_rate_threshold; // 125,140
+    const p1Salary = ty.salary.margaret;
+    const p2Salary = isCouple ? ty.salary.david : 0;
 
-    let summary = '';
-    if (mHigherRate && dHigherRate) {
-      summary = `Both Margaret (${fmt(mSalary)}) and David (${fmt(dSalary)}) are higher rate taxpayers. Pension contributions attract 40% tax relief — maximising contributions is highly tax-efficient.`;
-    } else if (dHigherRate) {
-      summary = `David (${fmt(dSalary)}) is a higher rate taxpayer. Pension contributions attract 40% tax relief.`;
+    const band = (salary) => {
+      if (salary > additionalThreshold) return 'additional rate (45%)';
+      if (salary > higherThreshold)     return 'higher rate (40%)';
+      return 'basic rate (20%)';
+    };
+    const relief = (salary) => {
+      if (salary > additionalThreshold) return 45;
+      if (salary > higherThreshold)     return 40;
+      return 20;
+    };
+    const p1Band = band(p1Salary);
+    const p1Relief = relief(p1Salary);
+
+    const anyAdditionalRate = p1Salary > additionalThreshold ||
+      (isCouple && p2Salary > additionalThreshold);
+    const anyHigherRate = anyAdditionalRate ||
+      p1Salary > higherThreshold ||
+      (isCouple && p2Salary > higherThreshold);
+
+    const sev = anyAdditionalRate ? 'red' : anyHigherRate ? 'amber' : 'green';
+
+    let summary, workingsLines;
+
+    if (isCouple) {
+      const p2Band = band(p2Salary);
+      const p2Relief = relief(p2Salary);
+      summary = `${p1} is a ${p1Band} taxpayer (${p1Relief}% pension relief). ${p2} is a ${p2Band} taxpayer (${p2Relief}% pension relief).`;
+      if (anyAdditionalRate) {
+        summary += ` Additional rate taxpayers should consider maximising pension contributions before adjusted income exceeds tapered allowance thresholds.`;
+      } else if (anyHigherRate) {
+        summary += ` Higher rate pension relief means every £10,000 of pension contribution costs only £6,000 net.`;
+      } else {
+        summary += ` Both are basic rate — pension contributions attract 20% relief (£2,000 for every £10,000 contributed).`;
+      }
+      workingsLines =
+        `Higher rate threshold:   ${fmt(higherThreshold)}\n` +
+        `Additional rate:         ${fmt(additionalThreshold)}\n` +
+        `${p1.padEnd(16)} ${fmt(p1Salary)} — ${p1Band}\n` +
+        `${p2.padEnd(16)} ${fmt(p2Salary)} — ${p2Band}\n` +
+        `${p1} pension relief:   ${p1Relief}% (£${p1Relief * 100}/£10k)\n` +
+        `${p2} pension relief:   ${p2Relief}% (£${p2Relief * 100}/£10k)`;
     } else {
-      summary = `Review salary levels against higher rate threshold.`;
+      summary = `${p1} is a ${p1Band} taxpayer.`;
+      if (p1Salary > additionalThreshold) {
+        summary += ` Pension contributions attract up to 45% tax relief. Consider the tapered annual allowance if adjusted income exceeds £260,000.`;
+      } else if (p1Salary > higherThreshold) {
+        summary += ` Pension contributions attract 40% relief — every £10,000 contributed costs £6,000 net.`;
+      } else {
+        summary += ` Pension contributions attract 20% basic rate relief.`;
+      }
+      workingsLines =
+        `Higher rate threshold:   ${fmt(higherThreshold)}\n` +
+        `Additional rate:         ${fmt(additionalThreshold)}\n` +
+        `${p1} salary:            ${fmt(p1Salary)} — ${p1Band}\n` +
+        `Pension tax relief:      ${p1Relief}%\n` +
+        `Relief on £10k pension:  £${p1Relief * 100}`;
     }
 
-    const sev = 'amber'; // Always worth flagging as planning opportunity
     obs.push({
-      title: 'Higher Rate Tax & Pension Efficiency',
+      title: 'Income Tax Band & Pension Efficiency',
       severity: sev,
       summary,
-      workings:
-        `Higher rate threshold:   ${fmt(higherThreshold)}\n` +
-        `Margaret salary:         ${fmt(mSalary)} — ${mHigherRate ? 'HIGHER RATE' : 'basic rate'}\n` +
-        `David salary:            ${fmt(dSalary)} — ${dHigherRate ? 'HIGHER RATE' : 'basic rate'}\n` +
-        `Pension tax relief:      ${dHigherRate || mHigherRate ? '40%' : '20%'}\n` +
-        `Relief on £10k pension:  ${dHigherRate || mHigherRate ? '£4,000' : '£2,000'}`,
+      workings: workingsLines,
       source: `HMRC: Income Tax Rates and Allowances ${rules.tax_year}`
     });
   }

@@ -6,15 +6,12 @@
 
   function parseAmount(str) {
     if (!str) return 0;
-    // Remove £, commas, whitespace
-    const cleaned = str.replace(/[£,\s]/g, '');
+    // Remove £, commas, whitespace, and any leading "Name: " prefix
+    const colonIdx = str.lastIndexOf(':');
+    const raw = colonIdx >= 0 ? str.substring(colonIdx + 1) : str;
+    const cleaned = raw.replace(/[£,\s]/g, '');
     const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : num;
-  }
-
-  function getText(selector, context) {
-    const el = (context || document).querySelector(selector);
-    return el ? el.textContent.trim() : '';
   }
 
   function getField(fieldName, context) {
@@ -27,16 +24,20 @@
 
     // ── Client info ────────────────────────────────────────────────
     data.client = {
-      name: getField('client-name'),
-      address: getField('client-address'),
+      name:         getField('client-name'),
+      address:      getField('client-address'),
       dob: {
-        margaret: getField('dob-margaret'),
-        david: getField('dob-david')
+        margaret:   getField('dob-margaret'),
+        david:      getField('dob-david')
       },
-      adviser: getField('adviser'),
-      reviewDate: getField('review-date'),
-      nextReview: getField('next-review'),
-      riskProfile: getField('risk-profile')
+      adviser:      getField('adviser'),
+      reviewDate:   getField('review-date'),
+      nextReview:   getField('next-review'),
+      riskProfile:  getField('risk-profile'),
+      // Person names and type — used to drive observation labels
+      person1Name:  getField('person1-name') || 'Margaret',
+      person2Name:  getField('person2-name') || 'David',
+      clientType:   getField('client-type')  || 'couple'  // 'couple' | 'individual'
     };
 
     // ── Holdings table ──────────────────────────────────────────────
@@ -50,11 +51,11 @@
 
       data.holdings.push({
         provider: getField('provider', row),
-        type: getField('policy-type', row),
-        wrapper: getField('wrapper', row),
-        owner: row.getAttribute('data-owner') || '',
-        value: rawValue,
-        status: getField('status', row)
+        type:     getField('policy-type', row),
+        wrapper:  getField('wrapper', row),
+        owner:    row.getAttribute('data-owner') || '',
+        value:    rawValue,
+        status:   getField('status', row)
       });
     });
 
@@ -72,25 +73,31 @@
     data.taxYear = {
       year: yearMatch ? yearMatch[1] : '2025/26',
       isaContributions: {
-        margaret: parseAmount(getField('isa-contrib-margaret').replace('Margaret:', '')),
-        david: parseAmount(getField('isa-contrib-david').replace('David:', ''))
+        margaret: parseAmount(getField('isa-contrib-margaret')),
+        david:    parseAmount(getField('isa-contrib-david'))
       },
       pensionContributions: {
-        margaret: parseAmount(getField('pension-contrib-margaret').replace('Margaret:', '')),
-        david: parseAmount(getField('pension-contrib-david').replace('David:', ''))
+        margaret: parseAmount(getField('pension-contrib-margaret')),
+        david:    parseAmount(getField('pension-contrib-david'))
       },
       estimatedCapitalGains: parseAmount(getField('capital-gains')),
-      dividendIncome: parseAmount(getField('dividend-income')),
+      dividendIncome:        parseAmount(getField('dividend-income')),
       salary: {
-        margaret: parseAmount(getField('salary-margaret').replace('Margaret:', '')),
-        david: parseAmount(getField('salary-david').replace('David:', ''))
+        margaret: parseAmount(getField('salary-margaret')),
+        david:    parseAmount(getField('salary-david'))
       },
       carryForward: {
-        david: parseAmount(
-          getField('carry-forward-david').replace('David:', '').replace(/[^\d,]/g, '')
-        )
-      }
+        margaret: parseAmount(getField('carry-forward-margaret')),
+        david:    parseAmount(getField('carry-forward-david'))
+      },
+      // Adjusted income for pension taper (optional — only present for high earners)
+      adjustedIncome: parseAmount(getField('adjusted-income')) || null
     };
+
+    // Zero out adjustedIncome if the field wasn't present
+    if (!document.querySelector('[data-field="adjusted-income"]')) {
+      data.taxYear.adjustedIncome = null;
+    }
 
     // ── Notes ──────────────────────────────────────────────────────
     data.notes = [];
@@ -99,10 +106,10 @@
       if (text) data.notes.push(text);
     });
 
-    // ── IHT ───────────────────────────────────────────────────────
+    // ── IHT estate estimate ────────────────────────────────────────
     const ihtEl = document.querySelector('[data-field="iht-estate"]');
     if (ihtEl) {
-      const raw = ihtEl.textContent.replace(/[£m,\s]/gi, '');
+      const raw = ihtEl.textContent.replace(/[£,\s]/g, '').replace(/m$/i, '');
       data.ihtEstimate = parseFloat(raw) * 1000000 || 1850000;
     } else {
       data.ihtEstimate = 1850000;
@@ -118,7 +125,6 @@
       try {
         const data = extractClientData();
         sendResponse({ success: true, data });
-        // Also broadcast so any open side panel updates
         chrome.runtime.sendMessage({ type: 'CLIENT_DATA', data });
       } catch (e) {
         sendResponse({ success: false, error: e.message });

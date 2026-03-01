@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>intelliflo office — Client Record: Pemberton</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; font-size: 14px; color: #1a1a2e; background: #f0f2f5; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    .topnav { background: #fff; border-bottom: 1px solid #dde1e7; height: 52px; display: flex; align-items: center; padding: 0 24px; gap: 32px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .topnav .brand { font-size: 18px; font-weight: 700; color: #0066CC; }
+    .topnav .brand span { color: #004a99; }
+    .topnav-links { display: flex; gap: 4px; flex: 1; }
+    .topnav-links a { text-decoration: none; color: #555; font-size: 13px; padding: 6px 12px; border-radius: 4px; }
+    .topnav-links a:hover { background: #f0f2f5; color: #0066CC; }
+    .topnav-right { display: flex; align-items: center; gap: 16px; }
+    .topnav-right .user-badge { background: #0066CC; color: #fff; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+    .topnav-right .user-info { font-size: 12px; color: #666; line-height: 1.3; }
+    .layout { display: flex; flex: 1; overflow: hidden; }
+    .sidebar { width: 200px; background: #1c2b4a; color: #c8d4e8; display: flex; flex-direction: column; padding-top: 8px; flex-shrink: 0; }
+    .sidebar-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: #7a8fad; padding: 12px 20px 4px; }
+    .sidebar a { display: flex; align-items: center; gap: 10px; padding: 9px 20px; text-decoration: none; color: #c8d4e8; font-size: 13px; border-left: 3px solid transparent; }
+    .sidebar a:hover { background: rgba(255,255,255,.06); color: #fff; }
+    .sidebar a.active { background: rgba(0,102,204,.25); color: #7ab8ff; border-left-color: #0066CC; font-weight: 600; }
+    .main { flex: 1; overflow-y: auto; padding: 24px; background: #f0f2f5; }
+    .breadcrumb { font-size: 12px; color: #888; margin-bottom: 16px; }
+    .breadcrumb a { color: #0066CC; text-decoration: none; }
+    .client-header { background: #fff; border: 1px solid #dde1e7; border-radius: 8px; padding: 20px 24px; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+    .client-avatar { width: 56px; height: 56px; background: linear-gradient(135deg, #c0392b, #922b21); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; font-weight: 700; flex-shrink: 0; }
+    .client-meta { flex: 1; }
+    .client-meta h1 { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
+    .meta-row { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 6px; }
+    .meta-item { font-size: 12px; color: #666; }
+    .meta-item strong { color: #333; font-weight: 600; }
+    .client-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+    .badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+    .badge-active { background: #d4edda; color: #155724; }
+    .badge-aggressive { background: #fde8e8; color: #7b1c1c; }
+    .total-value-display { text-align: right; }
+    .total-value-display .label { font-size: 11px; color: #888; }
+    .total-value-display .value { font-size: 22px; font-weight: 700; color: #0066CC; }
+    .tab-bar { display: flex; margin-bottom: 20px; border-bottom: 2px solid #dde1e7; }
+    .tab-bar a { text-decoration: none; color: #666; font-size: 13px; font-weight: 500; padding: 10px 20px; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+    .tab-bar a.active { color: #0066CC; border-bottom-color: #0066CC; font-weight: 600; }
+    .card { background: #fff; border: 1px solid #dde1e7; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.05); overflow: hidden; }
+    .card-header { padding: 14px 20px; border-bottom: 1px solid #eef0f3; display: flex; align-items: center; justify-content: space-between; }
+    .card-header h2 { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+    .card-body { padding: 20px; }
+    .holdings-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .holdings-table thead th { background: #f7f8fa; padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #666; border-bottom: 1px solid #dde1e7; }
+    .holdings-table tbody tr { border-bottom: 1px solid #f0f2f5; }
+    .holdings-table tbody tr:hover { background: #fafbfc; }
+    .holdings-table td { padding: 11px 14px; vertical-align: middle; }
+    .holdings-table td.value-cell { font-weight: 600; text-align: right; }
+    .holdings-table tfoot td { padding: 12px 14px; border-top: 2px solid #dde1e7; background: #f7f8fa; font-weight: 700; }
+    .holdings-table tfoot td.total-label { color: #666; font-size: 12px; text-transform: uppercase; }
+    .holdings-table tfoot td.total-value { text-align: right; color: #0066CC; font-size: 15px; }
+    .wrapper-pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 3px; }
+    .wrapper-sipp { background: #e8f0fe; color: #1a73e8; }
+    .wrapper-isa { background: #e6f4ea; color: #137333; }
+    .wrapper-gia { background: #fce8b2; color: #a37c00; }
+    .wrapper-workplace { background: #f3e8fd; color: #7b1fa2; }
+    .status-pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: #d4edda; color: #155724; }
+    .tax-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .tax-item { background: #f7f8fa; border: 1px solid #eef0f3; border-radius: 6px; padding: 12px 16px; }
+    .tax-item .ti-label { font-size: 11px; color: #888; font-weight: 500; margin-bottom: 6px; }
+    .tax-item .ti-value { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+    .tax-item .ti-value.alert { color: #dc3545; }
+    .tax-item .ti-sub { font-size: 12px; color: #555; margin-top: 4px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .detail-item .dl { font-size: 11px; color: #888; font-weight: 500; margin-bottom: 3px; }
+    .detail-item .dv { font-size: 13px; color: #1a1a2e; font-weight: 500; }
+    .notes-list { list-style: none; }
+    .notes-list li { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0f2f5; font-size: 13px; color: #333; }
+    .notes-list li:last-child { border-bottom: none; }
+    .notes-list li::before { content: '•'; color: #0066CC; font-weight: bold; flex-shrink: 0; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .statusbar { background: #1c2b4a; color: #7a8fad; font-size: 11px; padding: 5px 24px; display: flex; gap: 24px; flex-shrink: 0; }
+    .scenario-banner { background: #fde8e8; border: 1px solid #f5c6cb; border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; font-size: 12px; color: #7b1c1c; display: flex; gap: 10px; align-items: center; }
+    .scenario-banner strong { font-weight: 700; }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="brand">intelliflo <span>office</span></div>
+    <div class="topnav-links">
+      <a href="#">Dashboard</a>
+      <a href="#">Clients</a>
+      <a href="#">Reports</a>
+      <a href="#">Compliance</a>
+    </div>
+    <div class="topnav-right">
+      <div class="user-info">James Mitchell<br>Senior Adviser</div>
+      <div class="user-badge">JM</div>
+    </div>
+  </nav>
+
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="sidebar-label">Main Menu</div>
+      <a href="#">⊞ Dashboard</a>
+      <a href="#" class="active">👤 Clients</a>
+      <a href="#">📋 Policies</a>
+      <a href="#">📊 Reports</a>
+      <a href="#">✓ Tasks</a>
+    </nav>
+
+    <main class="main">
+
+      <!-- Demo scenario banner -->
+      <div class="scenario-banner">
+        <span>🔴</span>
+        <span><strong>Demo scenario:</strong> High earner — additional rate taxpayer. Tapered pension annual allowance applies (adjusted income £335k → effective AA £22,500). Pension contributions of £50,000 exceed tapered AA. Large estate triggers RNRB taper. Shows multiple 🔴 observations.</span>
+      </div>
+
+      <div class="breadcrumb">
+        <a href="#">Clients</a> › <strong>Richard Pemberton</strong>
+      </div>
+
+      <!-- Client Header -->
+      <div class="client-header">
+        <div class="client-avatar">RP</div>
+        <div class="client-meta">
+          <h1 data-field="client-name">Richard Pemberton</h1>
+          <span data-field="person1-name" style="display:none;">Richard</span>
+          <span data-field="person2-name" style="display:none;"></span>
+          <span data-field="client-type"  style="display:none;">individual</span>
+          <div class="meta-row">
+            <div class="meta-item"><strong>Address:</strong> <span data-field="client-address">Orchard House, Birdlip, Gloucestershire, GL4 8JH</span></div>
+            <div class="meta-item"><strong>Adviser:</strong> <span data-field="adviser">James Mitchell</span></div>
+            <div class="meta-item"><strong>Client Ref:</strong> RP-2018-0302</div>
+          </div>
+          <div class="meta-row">
+            <div class="meta-item"><strong>DOB:</strong> <span data-field="dob-margaret">08/04/1972</span></div>
+            <div class="meta-item"><strong>Last Review:</strong> <span data-field="review-date">20/01/2026</span></div>
+            <div class="meta-item"><strong>Next Review:</strong> <span data-field="next-review">20/01/2027</span></div>
+          </div>
+        </div>
+        <div class="client-badges">
+          <span class="badge badge-active">Active</span>
+          <span class="badge badge-aggressive" data-field="risk-profile">Aggressive (8/10)</span>
+          <div class="total-value-display">
+            <div class="label">Total Portfolio</div>
+            <div class="value" data-field="total-value">£2,203,000</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="tab-bar">
+        <a href="#" class="active">Overview</a>
+        <a href="#">Policies</a>
+        <a href="#">Documents</a>
+        <a href="#">Tasks</a>
+      </div>
+
+      <!-- Holdings -->
+      <div class="card">
+        <div class="card-header"><h2>Holdings &amp; Policies</h2></div>
+        <table class="holdings-table" id="holdings-table">
+          <thead>
+            <tr>
+              <th>Provider</th><th>Type</th><th>Wrapper</th><th>Owner</th>
+              <th style="text-align:right">Current Value</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="holdings-body">
+            <tr class="policy-row" data-wrapper-type="SIPP" data-policy-type="Pension" data-owner="Richard">
+              <td data-field="provider">Fidelity</td>
+              <td data-field="policy-type">Pension</td>
+              <td><span class="wrapper-pill wrapper-sipp" data-field="wrapper">SIPP</span></td>
+              <td>Richard</td>
+              <td class="value-cell" data-field="value" data-raw-value="1240000">£1,240,000</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+            <tr class="policy-row" data-wrapper-type="Workplace" data-policy-type="Pension" data-owner="Richard">
+              <td data-field="provider">Legal &amp; General</td>
+              <td data-field="policy-type">Pension</td>
+              <td><span class="wrapper-pill wrapper-workplace" data-field="wrapper">Workplace</span></td>
+              <td>Richard</td>
+              <td class="value-cell" data-field="value" data-raw-value="380000">£380,000</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+            <tr class="policy-row" data-wrapper-type="S&S ISA" data-policy-type="ISA" data-owner="Richard">
+              <td data-field="provider">Hargreaves Lansdown</td>
+              <td data-field="policy-type">ISA</td>
+              <td><span class="wrapper-pill wrapper-isa" data-field="wrapper">S&amp;S ISA</span></td>
+              <td>Richard</td>
+              <td class="value-cell" data-field="value" data-raw-value="98000">£98,000</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+            <tr class="policy-row" data-wrapper-type="GIA" data-policy-type="GIA" data-owner="Richard">
+              <td data-field="provider">Hargreaves Lansdown</td>
+              <td data-field="policy-type">GIA</td>
+              <td><span class="wrapper-pill wrapper-gia" data-field="wrapper">GIA</span></td>
+              <td>Richard</td>
+              <td class="value-cell" data-field="value" data-raw-value="485000">£485,000</td>
+              <td><span class="status-pill" data-field="status">Active</span></td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4" class="total-label">Total Portfolio Value</td>
+              <td class="total-value" data-field="portfolio-total" data-raw-value="2203000">£2,203,000</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Two-column -->
+      <div class="two-col">
+
+        <!-- Tax Year Activity -->
+        <div class="card">
+          <div class="card-header"><h2>Current Tax Year Activity</h2></div>
+          <div class="card-body">
+            <div style="font-size:11px; color:#888; font-weight:600; text-transform:uppercase; letter-spacing:.5px; margin-bottom:12px;" data-field="tax-year">2025/26 Tax Year</div>
+            <div class="tax-grid">
+              <div class="tax-item">
+                <div class="ti-label">ISA Contributions</div>
+                <div class="ti-value">£12,000</div>
+                <div class="ti-sub">
+                  <span data-field="isa-contrib-margaret">Richard: £12,000</span>
+                </div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Pension Contributions</div>
+                <div class="ti-value alert">£50,000 ⚠</div>
+                <div class="ti-sub">
+                  <span data-field="pension-contrib-margaret">Richard: £50,000</span><br>
+                  <small style="color:#dc3545;">Exceeds tapered AA of ~£22,500</small>
+                </div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Estimated Capital Gains (GIA)</div>
+                <div class="ti-value alert" data-field="capital-gains">£95,000</div>
+                <div class="ti-sub">Unrealised gains this year</div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Dividend Income</div>
+                <div class="ti-value alert" data-field="dividend-income">£12,500</div>
+                <div class="ti-sub">From GIA holdings</div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Salary / Employment</div>
+                <div class="ti-value">£310,000</div>
+                <div class="ti-sub">
+                  <span data-field="salary-margaret">Richard: £310,000</span>
+                </div>
+              </div>
+              <div class="tax-item">
+                <div class="ti-label">Adjusted Income (pension taper)</div>
+                <div class="ti-value alert" data-field="adjusted-income">£335,000</div>
+                <div class="ti-sub">Salary + employer pension (£25k)<br>Taper threshold: £260,000</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Client Details & Notes -->
+        <div>
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h2>Client Details</h2></div>
+            <div class="card-body">
+              <div class="detail-grid">
+                <div class="detail-item"><div class="dl">Relationship</div><div class="dv">Individual</div></div>
+                <div class="detail-item"><div class="dl">Service Level</div><div class="dv">Full Advice</div></div>
+                <div class="detail-item"><div class="dl">Fee Basis</div><div class="dv">Ongoing 0.5%</div></div>
+                <div class="detail-item"><div class="dl">Richard Age</div><div class="dv" data-field="age-margaret">53</div></div>
+                <div class="detail-item"><div class="dl">Tax Band</div><div class="dv">Additional Rate</div></div>
+                <div class="detail-item"><div class="dl">Risk Profile</div><div class="dv" data-field="risk-profile-detail">Aggressive (8/10)</div></div>
+                <div class="detail-item"><div class="dl">IHT Estimate</div><div class="dv" data-field="iht-estate">£4.2m</div></div>
+                <div class="detail-item"><div class="dl">RNRB Taper</div><div class="dv">Applies (estate &gt; £2m)</div></div>
+                <div class="detail-item"><div class="dl">Review Freq.</div><div class="dv">Annual</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h2>Adviser Notes</h2></div>
+            <div class="card-body">
+              <ul class="notes-list">
+                <li><span data-field="note">Pension contributions of £50,000 exceed tapered annual allowance — annual allowance charge likely</span></li>
+                <li><span data-field="note">GIA contains substantial unrealised gains — CGT planning required before year end</span></li>
+                <li><span data-field="note">Estate of £4.2m — RNRB entirely tapered away, significant IHT exposure of ~£1.55m</span></li>
+                <li><span data-field="note">Additional rate taxpayer — pension contributions attract 45% effective relief</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /two-col -->
+
+    </main>
+  </div>
+
+  <div class="statusbar">
+    <span>intelliflo office v8.4.2</span>
+    <span>|</span>
+    <span>Mitchell Financial Planning</span>
+    <span>|</span>
+    <span>FCA 123456</span>
+    <span>|</span>
+    <span>Last sync: 01/03/2026 09:14</span>
+  </div>
+</body>
+</html>
