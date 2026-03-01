@@ -682,6 +682,9 @@ function buildPlaceholderMap() {
 
   const d = clientData;
   const ty = d.taxYear;
+  const p1 = d.client.person1Name || 'Client';
+  const p2 = d.client.person2Name || '';
+  const isCouple = d.client.clientType === 'couple' && !!p2;
   const today = new Date(2026, 2, 1); // 1 March 2026 per system context
 
   // Holdings by group
@@ -733,13 +736,21 @@ function buildPlaceholderMap() {
     cash_total:                 fmt(cashTotal),
     tax_year:                   ty.year,
     isa_allowance:              fmt(isaAllowance),
-    isa_contributions_detail:   `Margaret: ${fmt(ty.isaContributions.margaret)} contributed (${fmt(mIsaRemaining)} remaining)\nDavid: ${fmt(ty.isaContributions.david)} contributed (${fmt(dIsaRemaining)} remaining)`,
-    pension_contributions_detail: `Margaret: ${fmt(ty.pensionContributions.margaret)} contributed\nDavid: ${fmt(ty.pensionContributions.david)} contributed`,
+    isa_contributions_detail:   isCouple
+      ? `${p1}: ${fmt(ty.isaContributions.margaret)} contributed (${fmt(mIsaRemaining)} remaining)\n${p2}: ${fmt(ty.isaContributions.david)} contributed (${fmt(dIsaRemaining)} remaining)`
+      : `${p1}: ${fmt(ty.isaContributions.margaret)} contributed (${fmt(mIsaRemaining)} remaining)`,
+    pension_contributions_detail: isCouple
+      ? `${p1}: ${fmt(ty.pensionContributions.margaret)} contributed\n${p2}: ${fmt(ty.pensionContributions.david)} contributed`
+      : `${p1}: ${fmt(ty.pensionContributions.margaret)} contributed`,
     cgt_detail:                 `Estimated gains of ${fmt(gains)} against ${fmt(exemptAmount)} annual exempt amount. Taxable gain: ${fmt(taxableGain)}.`,
     tax_observations:           obsTexts,
     recommended_actions:        actions,
-    isa_utilisation_detail:     `Margaret: ${fmt(ty.isaContributions.margaret)} used of ${fmt(isaAllowance)} (${fmt(mIsaRemaining)} remaining)\nDavid: ${fmt(ty.isaContributions.david)} used of ${fmt(isaAllowance)} (${fmt(dIsaRemaining)} remaining)`,
-    isa_recommendation:         `Margaret has ${fmt(mIsaRemaining)} and David has ${fmt(dIsaRemaining)} of unused ISA allowance remaining before 5 April. I would recommend utilising this allowance before the end of the tax year to maximise your tax-free investment growth.`,
+    isa_utilisation_detail:     isCouple
+      ? `${p1}: ${fmt(ty.isaContributions.margaret)} used of ${fmt(isaAllowance)} (${fmt(mIsaRemaining)} remaining)\n${p2}: ${fmt(ty.isaContributions.david)} used of ${fmt(isaAllowance)} (${fmt(dIsaRemaining)} remaining)`
+      : `${p1}: ${fmt(ty.isaContributions.margaret)} used of ${fmt(isaAllowance)} (${fmt(mIsaRemaining)} remaining)`,
+    isa_recommendation:         isCouple
+      ? `${p1} has ${fmt(mIsaRemaining)} and ${p2} has ${fmt(dIsaRemaining)} of unused ISA allowance remaining before 5 April. I would recommend utilising this allowance before the end of the tax year to maximise your tax-free investment growth.`
+      : `${p1} has ${fmt(mIsaRemaining)} of unused ISA allowance remaining before 5 April. I would recommend utilising this allowance before the end of the tax year to maximise your tax-free investment growth.`,
     cgt_position_detail:        `Your General Investment Account (AJ Bell, value ${fmt(giaTotal)}) holds assets with estimated unrealised gains of ${fmt(gains)} in the ${ty.year} tax year.`,
     estimated_gains:            fmt(gains),
     cgt_annual_exempt:          fmt(exemptAmount),

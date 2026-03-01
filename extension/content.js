@@ -35,9 +35,9 @@
       nextReview:   getField('next-review'),
       riskProfile:  getField('risk-profile'),
       // Person names and type — used to drive observation labels
-      person1Name:  getField('person1-name') || 'Margaret',
-      person2Name:  getField('person2-name') || 'David',
-      clientType:   getField('client-type')  || 'couple'  // 'couple' | 'individual'
+      person1Name:  getField('person1-name') || getField('client-name').split(/\s+/)[0] || 'Client',
+      person2Name:  getField('person2-name'),              // empty string = no second person
+      clientType:   getField('client-type')  || 'individual'  // 'couple' | 'individual'
     };
 
     // ── Holdings table ──────────────────────────────────────────────
