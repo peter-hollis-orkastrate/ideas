@@ -791,9 +791,9 @@ async function downloadDocx() {
       bytes[i] = binaryStr.charCodeAt(i);
     }
 
-    // Use PizZip + Docxtemplater
+    // Use PizZip + docxtemplater (lowercase — that's how the bundle exports)
     const zip = new PizZip(bytes.buffer);
-    const doc = new Docxtemplater(zip, {
+    const doc = new docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
       delimiters: { start: '{', end: '}' }
