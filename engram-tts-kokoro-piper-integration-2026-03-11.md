@@ -55,23 +55,28 @@ The ONNX model takes three inputs and produces one output:
 
 | Tensor | dtype | Shape | Description |
 |---|---|---|---|
-| `tokens` | int64 | `[1, seq_len]` | Phoneme token IDs, padded with `0` at both ends. Max 510 tokens (512 with padding). |
-| `style` | float32 | `[1, 256]` | Style (voice) embedding vector. Sliced from the voice bank by token count. |
-| `speed` | float32 | `[1]` | Synthesis speed multiplier. 1.0 = normal, 0.5–2.0 practical range. |
-| **`waveform`** (output) | float32 | `[1, num_samples]` | Raw PCM audio at 24 kHz. |
+| `input_ids` | int64 | `[1, seq_len]` | Phoneme token IDs, padded with `0` at both ends: `[[0, *tokens, 0]]`. Max 512 total (510 usable tokens). |
+| `style` | float32 | `[1, 1, 256]` | Style (voice) embedding. Loaded from the voice `.bin` file and indexed by `len(tokens) - 1`. |
+| `speed` | float32 | `[1]` | Synthesis speed multiplier. `[1.0]` = normal, 0.5–2.0 practical range. |
+| **`audio`** (output) | float32 | `[1, num_samples]` | Raw PCM audio at 24 kHz. |
 
-**Voice bank (`voices-v1.0.bin`):** A NumPy NPZ archive containing one array per named voice. Each array has shape `511 × 1 × 256` (float32). To obtain the style vector for a given input, index by the number of tokens after phonemisation:
+**Voice files:** The `onnx-community/Kokoro-82M-v1.0-ONNX` repo distributes individual per-voice `.bin` files in a `voices/` directory (`af_heart.bin`, `bm_lewis.bin`, etc.), each ~522 kB. Each `.bin` is a raw float32 array of shape `N × 1 × 256` loaded as:
 
+```rust
+let bytes = std::fs::read("voices/af_heart.bin")?;
+let floats: Vec<f32> = bytes.chunks_exact(4)
+    .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+    .collect();
+// shape: (floats.len() / 256, 1, 256)
+// index by token count (= len(tokens) - 1) to get the [1, 1, 256] style tensor
 ```
-style = voice_bank["af_heart"][token_count]  // shape [1, 256]
-```
 
-Two voices cover the default installer bundle:
+Two voices cover the default installer bundle — ~1 MB combined:
 
-- `af_heart` — American English female (highest-quality English voice)
-- `bm_lewis` — British English male
+- `af_heart.bin` — American English female (highest-quality English voice)
+- `bm_lewis.bin` — British English male
 
-Voice blending is possible by averaging two style arrays element-wise before passing to the model.
+Voice blending is possible by averaging two loaded float32 arrays element-wise before slicing.
 
 ---
 
@@ -187,7 +192,7 @@ edition = "2021"
 
 [features]
 default  = []
-kokoro   = ["dep:kokoro-tts"]
+kokoro   = ["dep:ort", "dep:ndarray", "dep:espeakng"]
 piper    = ["dep:piper-rs"]
 
 [dependencies]
@@ -197,14 +202,21 @@ tracing      = { workspace = true }
 thiserror    = { workspace = true }
 cpal         = { workspace = true }
 
-# Kokoro: async TTS, streaming support, English + Chinese G2P via espeak-ng
-kokoro-tts   = { version = "0.1", optional = true }
+# Kokoro: direct ort inference — uses workspace-pinned ort, no third-party TTS crate.
+# espeakng provides espeak-ng → IPA phonemisation for the Kokoro phoneme vocabulary.
+ort      = { version = "2.0.0-rc.11", features = ["std", "ndarray", "load-dynamic"], optional = true }
+ndarray  = { version = "0.17", optional = true }
+espeakng = { version = "0.4", optional = true }
 
-# Piper: pure-Rust ONNX synthesis, bundles espeak-ng data internally (no native DLL needed)
-piper-rs     = { version = "1.1", optional = true }
+# Piper: pure-Rust ONNX synthesis via piper-rs, which bundles espeak-ng data.
+piper-rs = { version = "1.1", optional = true }
 ```
 
-`cpal` is already in the workspace (used by `engram-audio` for capture). `kokoro-tts` brings its own `ort` dependency and espeak-ng phonemisation. `piper-rs` (thewh1teagle, pure Rust) carries espeak-ng data internally and requires no additional native library on Windows.
+`cpal` is already in the workspace (used by `engram-audio` for capture).
+
+**Why direct `ort` for Kokoro, not a TTS crate?** Community Kokoro crates (`kokoroxide`, `kokoro-tts`) each pin their own `ort` version that may conflict with the workspace's `ort = "2.0.0-rc.11"`. `kokoroxide` pins `ort = "1.16"` — a major version behind. Implementing `KokoroService` directly against the workspace `ort` eliminates this conflict and keeps the dependency tree flat. The Kokoro ONNX interface is simple (three inputs, one output) and fully documented above.
+
+`piper-rs` pins `ort = "2.0.0-rc.9"` — close to the workspace version and likely compatible without change, but this should be verified when the milestone is implemented.
 
 ### Step 3 — Define the `SynthesisService` trait
 
@@ -228,34 +240,75 @@ pub struct SynthesisResult {
 
 ### Step 4 — Implement `KokoroService`
 
-`kokoro-tts` wraps the ONNX session and espeak-ng phonemisation and exposes an async API with optional streaming. `KokoroService` loads both the model and the voice bank at startup and delegates synthesis:
+`KokoroService` calls the ONNX session directly via the workspace `ort` crate, using `espeakng` for phonemisation. The voice style tensors are loaded at startup from individual `.bin` files in the `voices/` subdirectory:
 
 ```rust
 // engram-tts/src/kokoro_service.rs
 
 #[cfg(feature = "kokoro")]
 pub mod kokoro_impl {
-    use kokoro_tts::{Kokoro, KokoroConfig};
-    use crate::{SynthesisResult, SynthesisService};
+    use ort::{Session, Value};
+    use ndarray::{Array1, Array3, CowArray};
+    use espeakng::EspeakNg;
+    use std::collections::HashMap;
     use engram_core::{error::EngramError, config::TtsConfig};
+    use crate::{SynthesisResult, SynthesisService};
+
+    // IPA character → Kokoro phoneme token ID map (abridged; full map in source)
+    fn build_phoneme_map() -> HashMap<char, i64> { /* ... */ }
 
     pub struct KokoroService {
-        kokoro: Kokoro,
+        session:     Session,
+        // voice name → raw float32 tensor bytes, shape (N, 1, 256)
+        voice_store: HashMap<String, Vec<f32>>,
+        phoneme_map: HashMap<char, i64>,
     }
 
     impl KokoroService {
         pub fn new(config: &TtsConfig) -> Result<Self, EngramError> {
-            // model_q8f16.onnx: 86 MB mixed-precision (int8 weights + fp16 activations)
-            // Marginally smaller and same quality on CPU as the int8-only quantised model.
-            let cfg = KokoroConfig {
-                model_path:  format!("{}/model_q8f16.onnx",  config.model_dir),
-                voices_path: format!("{}/voices-v1.0.bin",   config.model_dir),
-            };
+            // model_q8f16.onnx: 86 MB, int8 weights + fp16 activations
+            let session = Session::builder()?
+                .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
+                .with_model_from_file(
+                    format!("{}/model_q8f16.onnx", config.model_dir)
+                )?;
 
-            let kokoro = Kokoro::new(cfg)
-                .map_err(|e| EngramError::Config(e.to_string()))?;
+            // Load bundled voices (each .bin is a flat f32 array, shape N×1×256)
+            let mut voice_store = HashMap::new();
+            for name in &["af_heart", "bm_lewis"] {
+                let path = format!("{}/voices/{}.bin", config.model_dir, name);
+                let bytes = std::fs::read(&path)
+                    .map_err(|e| EngramError::Config(format!("{path}: {e}")))?;
+                let floats: Vec<f32> = bytes.chunks_exact(4)
+                    .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                    .collect();
+                voice_store.insert(name.to_string(), floats);
+            }
 
-            Ok(Self { kokoro })
+            Ok(Self { session, voice_store, phoneme_map: build_phoneme_map() })
+        }
+
+        fn phonemise(&self, text: &str) -> Result<Vec<i64>, EngramError> {
+            // espeak-ng → IPA → Kokoro token IDs
+            let ipa = EspeakNg::phonemise(text, "en")
+                .map_err(|e| EngramError::Processing(e.to_string()))?;
+            let mut ids: Vec<i64> = ipa.chars()
+                .filter_map(|c| self.phoneme_map.get(&c).copied())
+                .collect();
+            // Pad with 0 at both ends (required by the model)
+            ids.insert(0, 0);
+            ids.push(0);
+            Ok(ids)
+        }
+
+        fn get_style(&self, voice: &str, token_count: usize) -> Result<Array3<f32>, EngramError> {
+            let floats = self.voice_store.get(voice)
+                .ok_or_else(|| EngramError::Config(format!("unknown voice: {voice}")))?;
+            // floats is laid out as (N, 1, 256); pick row = token_count - 1
+            let row = (token_count - 1).min(floats.len() / 256 - 1);
+            let start = row * 256;
+            let slice = &floats[start..start + 256];
+            Ok(Array3::from_shape_vec((1, 1, 256), slice.to_vec())?)
         }
     }
 
@@ -266,21 +319,45 @@ pub mod kokoro_impl {
             voice: &str,
             speed: f32,
         ) -> Result<SynthesisResult, EngramError> {
-            let audio = self.kokoro
-                .synthesise(text, voice, speed)
-                .await
-                .map_err(|e| EngramError::Processing(e.to_string()))?;
+            // Run on a blocking thread — ort inference is synchronous
+            let text = text.to_owned();
+            let voice = voice.to_owned();
+            let service = /* Arc<Self> */;
 
-            Ok(SynthesisResult {
-                pcm: audio.samples,
-                sample_rate: 24_000,
+            tokio::task::spawn_blocking(move || {
+                let token_ids = service.phonemise(&text)?;
+                let n = token_ids.len();
+
+                let input_ids = CowArray::from(
+                    ndarray::Array2::from_shape_vec((1, n), token_ids)?
+                ).into_dyn();
+
+                let style = CowArray::from(service.get_style(&voice, n)?)
+                    .into_dyn();
+
+                let speed_t = CowArray::from(
+                    Array1::from_vec(vec![speed])
+                ).into_dyn();
+
+                let outputs = service.session.run(ort::inputs![
+                    "input_ids" => input_ids,
+                    "style"     => style,
+                    "speed"     => speed_t,
+                ]?)?;
+
+                let audio = outputs["audio"].try_extract_tensor::<f32>()?;
+                let pcm: Vec<f32> = audio.iter().cloned().collect();
+
+                Ok::<_, EngramError>(SynthesisResult { pcm, sample_rate: 24_000 })
             })
+            .await
+            .map_err(|e| EngramError::Processing(e.to_string()))?
         }
     }
 }
 ```
 
-**Crate choice rationale.** `kokoro-tts` is preferred over `kokoroxide` for two reasons: it exposes a `tokio`-native async API (avoiding `spawn_blocking` for the synthesis call) and it supports Chinese G2P via `pinyin_to_ipa`. `kokoroxide` currently covers American English only. If `kokoro-tts` becomes unmaintained, falling back to direct `ort` synthesis using the ONNX interface documented in the *Kokoro ONNX Interface* section above requires no architectural change — only the `KokoroService` implementation changes.
+The `phonemise` helper calls `espeakng` to get IPA for the input text, then maps each IPA character to a Kokoro token ID using the fixed phoneme vocabulary. The token padding (`[0, *tokens, 0]`) is required by the model — the style vector is then indexed at `len(tokens) - 1` (i.e. before padding) to match the token count the model sees.
 
 ### Step 5 — Implement `PiperService` (optional, behind `piper` feature)
 
@@ -330,8 +407,9 @@ pub mod piper_impl {
                 .phonemize_text(text)
                 .map_err(|e| EngramError::Processing(e.to_string()))?;
 
-            // length_scale controls duration; default 1.0, speed inverts it
-            let mut opts = piper_rs::SynthesisConfig::default();
+            // `speak_one_sentence` accepts the phoneme String returned by phonemize_text.
+            // `PiperSynthesisConfig.length_scale` controls duration — speed inverts it.
+            let mut opts = piper_rs::PiperSynthesisConfig::default();
             opts.length_scale = 1.0 / speed;
 
             let audio = self.model
@@ -339,7 +417,7 @@ pub mod piper_impl {
                 .map_err(|e| EngramError::Processing(e.to_string()))?;
 
             Ok(SynthesisResult {
-                pcm: audio.samples,
+                pcm: audio.audio_samples,      // Vec<f32>
                 sample_rate: self.sample_rate,
             })
         }
@@ -347,7 +425,7 @@ pub mod piper_impl {
 }
 ```
 
-`piper-rs` handles espeak-ng phonemisation internally using the `espeak-ng-data/` directory shipped in the installer's application folder. No `libespeak-ng.dll` is needed — unlike `kokoro-tts` which requires the DLL for its phonemisation pass.
+`piper-rs` handles espeak-ng phonemisation internally via its bundled `espeak-rs` crate. No `libespeak-ng.dll` is needed at runtime — unlike the `espeakng` crate used by the Kokoro backend. The `espeak-ng-data/` directory (phoneme tables) must be present at the path resolved by `$PIPER_ESPEAKNG_DATA_DIRECTORY` or `<exe-dir>/espeak-ng-data/`; Engram ships this directory in the installer.
 
 ### Step 6 — Audio playback helper
 
@@ -490,8 +568,10 @@ async fn speak(
 
 ```
 %APPDATA%\Engram\models\kokoro\
-    model_quantized.onnx     (92 MB — int8 ONNX, bundled in installer)
-    voices-v1.0.bin          ( 2 MB — NPZ voice bank, bundled in installer)
+    model_q8f16.onnx         (86 MB — int8 weights + fp16 activations, bundled in installer)
+    voices\
+        af_heart.bin         (522 kB — American English female)
+        bm_lewis.bin         (522 kB — British English male)
 
 %APPDATA%\Engram\models\piper\    (optional, Piper backend only)
     en_US-lessac-medium.onnx      (63 MB — per-voice model)
@@ -513,7 +593,7 @@ If both features are compiled in, `libespeak-ng.dll` + `espeak-ng-data/` is pres
 | Moonshine base (encoder + decoder) | ~57 MB (Moonshine milestone) |
 | Existing embedding model | ~22 MB (already present) |
 | Kokoro `model_q8f16.onnx` | 86 MB |
-| `voices-v1.0.bin` | 2 MB |
+| `voices/af_heart.bin` + `voices/bm_lewis.bin` | 1 MB |
 | `libespeak-ng.dll` + `espeak-ng-data/` | ~9 MB |
 | **Total new additions** | **97 MB** |
 
@@ -523,15 +603,17 @@ Total installer growth from the TTS milestone is ~97 MB, bringing the cumulative
 
 ## HuggingFace Source
 
-The quantised ONNX model and voice bank are published at:
+The quantised ONNX model and individual voice files are published at:
 
 ```
 onnx-community/Kokoro-82M-v1.0-ONNX
-  model_quantized.onnx
-  voices-v1.0.bin
+  onnx/model_q8f16.onnx          (86 MB)
+  voices/af_heart.bin            (522 kB)
+  voices/bm_lewis.bin            (522 kB)
+  ... (34 voices total)
 ```
 
-Both files are Apache 2.0 licensed. The `kokoroxide` crate is MIT licensed. No API key, no login, no first-run network call (if bundled in installer).
+All files are Apache 2.0 licensed. No API key, no login, no first-run network call (if bundled in installer).
 
 ---
 
@@ -603,7 +685,7 @@ Sequencing: Moonshine ships first (higher user-facing impact, fully specified). 
 
 **Audio device conflicts.** `engram-audio` holds a WASAPI input stream; `engram-tts` opens a WASAPI output stream. Windows handles these independently. However, if the system uses a single USB audio device that is opened exclusively, conflicts could occur. Test on single-device configurations. Default to shared-mode WASAPI for the output stream (which `cpal` does).
 
-**`voices-v1.0.bin` NPZ format.** The file uses the NumPy NPZ format despite the `.bin` extension. The `kokoroxide` crate handles loading internally. If the voice bank format changes in a future Kokoro release, `kokoroxide` updates would be needed. Pin HuggingFace downloads to a specific commit SHA.
+**Voice `.bin` file format.** Each voice file is a raw flat float32 array (little-endian), shape `N × 1 × 256` where N ≈ 510. This is read directly in `KokoroService::new` without any external crate. The style vector for a given synthesis call is sliced at row `len(tokens) - 1`. If the format changes in a future Kokoro release, this is a one-function change. Pin HuggingFace downloads to a specific commit SHA.
 
 **Digest readback timing.** The audio digest is generated at a scheduled time (e.g. 08:00). If the user's system is in a meeting or playing music at that time, Engram speaking aloud would be disruptive. A `tts_quiet_hours` config field (similar to notification quiet hours on mobile OSes) should be added alongside `tts.enabled`.
 
