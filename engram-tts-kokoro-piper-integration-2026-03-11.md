@@ -10,7 +10,7 @@ Engram has no text-to-speech capability today. Adding TTS enables audio digests,
 
 Both engines are ONNX-based, integrate through the `ort` crate already present in the workspace, run in real-time on CPU, and ship models small enough to bundle in the WiX installer. The integration lives in a new crate, `engram-tts`, behind a feature flag. Nothing else in the pipeline changes.
 
-Kokoro is recommended as the default. Its quantised ONNX model (`model_quantized.onnx`, 92 MB) fits alongside Moonshine (57 MB) and the existing embedding model within installer budget. Its 50 voices across 9 languages cover Engram's current English-first use case with room to expand. CPU synthesis of a 20-word utterance takes under 200 ms on a mid-range laptop.
+Kokoro is recommended as the default. Its mixed-precision quantised ONNX model (`model_q8f16.onnx`, 86 MB) fits alongside Moonshine (57 MB) and the existing embedding model within installer budget. Its 50 voices across 9 languages cover Engram's current English-first use case with room to expand. CPU synthesis of a 20-word utterance takes under 200 ms on a mid-range laptop.
 
 ---
 
@@ -31,21 +31,21 @@ Kokoro is recommended as the default. Its quantised ONNX model (`model_quantized
 | | **Kokoro (quantised)** | **Piper (medium)** |
 |---|---|---|
 | Architecture | StyleTTS 2 + ISTFTNet | VITS |
-| Model size | 92 MB (int8 ONNX) + 2 MB voices | 63–130 MB per voice |
+| Model size | 86 MB (q8f16 ONNX) + 2 MB voices | 63–130 MB per voice |
 | Output sample rate | 24,000 Hz | 16,000–22,050 Hz (voice-dependent) |
 | CPU real-time factor | ~0.1–0.15× (fast) | ~0.05× (very fast) |
 | ONNX via `ort` | Yes | Yes |
-| Phonemiser | espeak-ng (via `kokoroxide`) | espeak-ng |
+| Phonemiser | espeak-ng (via `kokoro-tts` crate) | espeak-ng (bundled data, no DLL) |
 | English quality | Near-commercial | Good |
-| Languages | 9 (50 voices, v1.0) | 40+ (70+ voices) |
-| New native DLL | `libespeak-ng.dll` | `libespeak-ng.dll` |
-| Licence | Apache 2.0 (model), MIT (`kokoroxide`) | MIT (voices); upstream moving to GPL |
+| Languages | 9 (50 voices, v1.0); EN via `kokoro-tts`, others need custom G2P | 40+ (70+ voices) |
+| New native DLL | `libespeak-ng.dll` (for `kokoro-tts` phonemisation) | None (`piper-rs` bundles espeak data) |
+| Licence | Apache 2.0 (model), MIT (`kokoro-tts`) | MIT (voices + `piper-rs`); new upstream GPL |
 | Voices bundled | 2 (af_heart, bm_lewis) ~2 MB | 1 per install |
 | HuggingFace | `onnx-community/Kokoro-82M-v1.0-ONNX` | `rhasspy/piper-voices` |
 
 **Recommendation:** Kokoro as default. Piper as an optional alternative for users who need multilingual support beyond Kokoro's 9-language set, subject to the GPL note below.
 
-**Piper licence note:** Development of Piper has moved to `OHF-Voice/piper1-gpl` under GPL. The original `rhasspy/piper` (MIT) and all existing voice files remain MIT-licensed. The `piper-rs` crate binds the original MIT codebase. Engram should pin to a specific release of `piper-rs` and the original rhasspy voice files rather than the new GPL branch.
+**Piper licence note:** `rhasspy/piper` was archived (read-only) in October 2025; development moved to `OHF-Voice/piper1-gpl` under GPL. All existing voice files on `rhasspy/piper-voices` remain MIT-licensed. The community `thewh1teagle/piper-rs` crate (pure Rust, MIT) targets the original archived codebase — pin to a specific release and the original voice files. Do not take a dependency on `piper1-gpl` or `piper1-rs`.
 
 ---
 
@@ -187,8 +187,8 @@ edition = "2021"
 
 [features]
 default  = []
-kokoro   = ["dep:kokoroxide"]
-piper    = ["dep:ort", "dep:ndarray", "dep:serde_json"]
+kokoro   = ["dep:kokoro-tts"]
+piper    = ["dep:piper-rs"]
 
 [dependencies]
 engram-core  = { path = "../engram-core" }
@@ -197,14 +197,14 @@ tracing      = { workspace = true }
 thiserror    = { workspace = true }
 cpal         = { workspace = true }
 
-kokoroxide   = { version = "0.1", optional = true }
+# Kokoro: async TTS, streaming support, English + Chinese G2P via espeak-ng
+kokoro-tts   = { version = "0.1", optional = true }
 
-ort          = { version = "2.0.0-rc.11", features = ["std", "ndarray", "load-dynamic"], optional = true }
-ndarray      = { version = "0.17", optional = true }
-serde_json   = { workspace = true, optional = true }
+# Piper: pure-Rust ONNX synthesis, bundles espeak-ng data internally (no native DLL needed)
+piper-rs     = { version = "1.1", optional = true }
 ```
 
-`cpal` is already in the workspace (used by `engram-audio` for capture). `kokoroxide` brings `ort`, espeak-ng, and the phonemisation logic as its own dependencies under the `kokoro` feature.
+`cpal` is already in the workspace (used by `engram-audio` for capture). `kokoro-tts` brings its own `ort` dependency and espeak-ng phonemisation. `piper-rs` (thewh1teagle, pure Rust) carries espeak-ng data internally and requires no additional native library on Windows.
 
 ### Step 3 — Define the `SynthesisService` trait
 
@@ -228,34 +228,34 @@ pub struct SynthesisResult {
 
 ### Step 4 — Implement `KokoroService`
 
-`kokoroxide` wraps the ONNX session and espeak-ng phonemisation. `KokoroService` loads both at startup and delegates synthesis:
+`kokoro-tts` wraps the ONNX session and espeak-ng phonemisation and exposes an async API with optional streaming. `KokoroService` loads both the model and the voice bank at startup and delegates synthesis:
 
 ```rust
 // engram-tts/src/kokoro_service.rs
 
 #[cfg(feature = "kokoro")]
 pub mod kokoro_impl {
-    use kokoroxide::{KokoroTTS, TTSConfig, VoiceStyle};
+    use kokoro_tts::{Kokoro, KokoroConfig};
     use crate::{SynthesisResult, SynthesisService};
     use engram_core::{error::EngramError, config::TtsConfig};
 
     pub struct KokoroService {
-        tts: KokoroTTS,
+        kokoro: Kokoro,
     }
 
     impl KokoroService {
         pub fn new(config: &TtsConfig) -> Result<Self, EngramError> {
-            let tts_config = TTSConfig::builder()
-                .model_path(format!("{}/model_quantized.onnx", config.model_dir))
-                .voices_path(format!("{}/voices-v1.0.bin", config.model_dir))
-                .optimization_level(ort::GraphOptimizationLevel::Level3)
-                .build()
+            // model_q8f16.onnx: 86 MB mixed-precision (int8 weights + fp16 activations)
+            // Marginally smaller and same quality on CPU as the int8-only quantised model.
+            let cfg = KokoroConfig {
+                model_path:  format!("{}/model_q8f16.onnx",  config.model_dir),
+                voices_path: format!("{}/voices-v1.0.bin",   config.model_dir),
+            };
+
+            let kokoro = Kokoro::new(cfg)
                 .map_err(|e| EngramError::Config(e.to_string()))?;
 
-            let tts = KokoroTTS::new(tts_config)
-                .map_err(|e| EngramError::Processing(e.to_string()))?;
-
-            Ok(Self { tts })
+            Ok(Self { kokoro })
         }
     }
 
@@ -266,8 +266,9 @@ pub mod kokoro_impl {
             voice: &str,
             speed: f32,
         ) -> Result<SynthesisResult, EngramError> {
-            let audio = self.tts
-                .generate_speech(text, voice, speed)
+            let audio = self.kokoro
+                .synthesise(text, voice, speed)
+                .await
                 .map_err(|e| EngramError::Processing(e.to_string()))?;
 
             Ok(SynthesisResult {
@@ -279,50 +280,42 @@ pub mod kokoro_impl {
 }
 ```
 
+**Crate choice rationale.** `kokoro-tts` is preferred over `kokoroxide` for two reasons: it exposes a `tokio`-native async API (avoiding `spawn_blocking` for the synthesis call) and it supports Chinese G2P via `pinyin_to_ipa`. `kokoroxide` currently covers American English only. If `kokoro-tts` becomes unmaintained, falling back to direct `ort` synthesis using the ONNX interface documented in the *Kokoro ONNX Interface* section above requires no architectural change — only the `KokoroService` implementation changes.
+
 ### Step 5 — Implement `PiperService` (optional, behind `piper` feature)
 
-Piper is invoked directly through `ort` using the ONNX model and the JSON config for the selected voice:
+`piper-rs` (thewh1teagle) is a pure-Rust implementation that handles phonemisation and ONNX inference internally. It requires no native DLL — espeak-ng's data directory is bundled with the crate or located via an environment variable. Voice is baked into the model at load time (one ONNX file per voice):
 
 ```rust
 // engram-tts/src/piper_service.rs
 
 #[cfg(feature = "piper")]
 pub mod piper_impl {
-    use ort::{Session, Value};
-    use ndarray::{Array1, Array2, Array3, CowArray};
+    use piper_rs::PiperModel;
+    use std::sync::Arc;
+    use std::path::Path;
     use engram_core::{error::EngramError, config::TtsConfig};
     use crate::{SynthesisResult, SynthesisService};
 
     pub struct PiperService {
-        session: Session,
-        phoneme_map: std::collections::HashMap<String, i64>,
+        model: Arc<dyn PiperModel + Send + Sync>,
         sample_rate: u32,
-        noise_scale: f32,
-        length_scale: f32,
-        noise_w: f32,
     }
 
     impl PiperService {
         pub fn new(config: &TtsConfig) -> Result<Self, EngramError> {
-            let model_path = format!("{}/{}.onnx", config.model_dir, config.voice);
+            // config.voice is the filename stem, e.g. "en_US-lessac-medium"
             let config_path = format!("{}/{}.onnx.json", config.model_dir, config.voice);
 
-            let session = Session::builder()?
-                .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
-                .with_model_from_file(&model_path)?;
+            // piper-rs discovers espeak-ng-data/ via:
+            //   $PIPER_ESPEAKNG_DATA_DIRECTORY → ./espeak-ng-data/ → <exe-dir>/espeak-ng-data/
+            // Engram ships espeak-ng-data/ in the application directory alongside the exe.
+            let model = piper_rs::from_config_path(Path::new(&config_path))
+                .map_err(|e| EngramError::Config(e.to_string()))?;
 
-            let cfg: serde_json::Value = serde_json::from_str(
-                &std::fs::read_to_string(&config_path)?
-            )?;
+            let sample_rate = model.config().audio.sample_rate as u32;
 
-            let phoneme_map = parse_phoneme_map(&cfg)?;
-            let sample_rate = cfg["audio"]["sample_rate"].as_u64().unwrap_or(22050) as u32;
-            let inference = &cfg["inference"];
-            let noise_scale  = inference["noise_scale"].as_f64().unwrap_or(0.667) as f32;
-            let length_scale = inference["length_scale"].as_f64().unwrap_or(1.0) as f32;
-            let noise_w      = inference["noise_w"].as_f64().unwrap_or(0.8) as f32;
-
-            Ok(Self { session, phoneme_map, sample_rate, noise_scale, length_scale, noise_w })
+            Ok(Self { model, sample_rate })
         }
     }
 
@@ -333,30 +326,20 @@ pub mod piper_impl {
             _voice: &str,    // voice is baked into the session at load time
             speed: f32,
         ) -> Result<SynthesisResult, EngramError> {
-            let phoneme_ids = phonemise(text, &self.phoneme_map)?;
-            let seq_len = phoneme_ids.len() as i64;
+            let phonemes = self.model
+                .phonemize_text(text)
+                .map_err(|e| EngramError::Processing(e.to_string()))?;
 
-            let input = CowArray::from(
-                Array2::from_shape_vec((1, phoneme_ids.len()), phoneme_ids)?
-            ).into_dyn();
-            let lengths = CowArray::from(Array1::from_vec(vec![seq_len])).into_dyn();
-            let scales  = CowArray::from(Array1::from_vec(vec![
-                self.noise_scale,
-                self.length_scale / speed,   // length_scale controls duration; speed inverts it
-                self.noise_w,
-            ])).into_dyn();
+            // length_scale controls duration; default 1.0, speed inverts it
+            let mut opts = piper_rs::SynthesisConfig::default();
+            opts.length_scale = 1.0 / speed;
 
-            let outputs = self.session.run(ort::inputs![
-                "input"         => input,
-                "input_lengths" => lengths,
-                "scales"        => scales,
-            ]?)?;
-
-            let waveform = outputs["output"].try_extract_tensor::<f32>()?;
-            let pcm: Vec<f32> = waveform.iter().cloned().collect();
+            let audio = self.model
+                .speak_one_sentence(phonemes, &opts)
+                .map_err(|e| EngramError::Processing(e.to_string()))?;
 
             Ok(SynthesisResult {
-                pcm,
+                pcm: audio.samples,
                 sample_rate: self.sample_rate,
             })
         }
@@ -364,7 +347,7 @@ pub mod piper_impl {
 }
 ```
 
-`phonemise()` calls espeak-ng (via `espeakng` crate) to produce IPA for each word, then maps IPA characters to Piper's phoneme ID integers using the map from the JSON config. This is the same espeak-ng DLL already used by `kokoroxide` under the `kokoro` feature.
+`piper-rs` handles espeak-ng phonemisation internally using the `espeak-ng-data/` directory shipped in the installer's application folder. No `libespeak-ng.dll` is needed — unlike `kokoro-tts` which requires the DLL for its phonemisation pass.
 
 ### Step 6 — Audio playback helper
 
@@ -515,21 +498,26 @@ async fn speak(
     en_US-lessac-medium.onnx.json ( <1 MB — phoneme map and config)
 ```
 
-**espeak-ng DLL** (`libespeak-ng.dll` and its data directory `espeak-ng-data/`) ships in the installer's application directory alongside `onnxruntime.dll`. Both `kokoroxide` (Kokoro) and direct espeak-ng calls (Piper) load the same DLL.
+**espeak-ng** is required by both engines but in different forms:
 
-**Installer size budget:**
+- **Kokoro (`kokoro-tts` feature):** requires `libespeak-ng.dll` at runtime for its phonemisation pass. The DLL ships in the installer's application directory alongside `onnxruntime.dll`.
+- **Piper (`piper-rs` feature):** requires only the `espeak-ng-data/` directory (phoneme data files). No DLL needed — `piper-rs` does not dynamically link espeak-ng. The data directory ships in the installer.
+
+If both features are compiled in, `libespeak-ng.dll` + `espeak-ng-data/` is present anyway (Kokoro needs both). If only Piper is compiled, only the data directory is needed, saving ~1 MB.
+
+**Installer size budget (Kokoro default, both features compiled):**
 
 | Artifact | Size |
 |---|---|
 | `onnxruntime.dll` | ~17 MB (already present for VAD + Moonshine) |
 | Moonshine base (encoder + decoder) | ~57 MB (Moonshine milestone) |
 | Existing embedding model | ~22 MB (already present) |
-| Kokoro `model_quantized.onnx` | 92 MB |
+| Kokoro `model_q8f16.onnx` | 86 MB |
 | `voices-v1.0.bin` | 2 MB |
-| `libespeak-ng.dll` + data | ~8 MB |
-| **Total new additions** | **102 MB** |
+| `libespeak-ng.dll` + `espeak-ng-data/` | ~9 MB |
+| **Total new additions** | **97 MB** |
 
-Total installer growth from the TTS milestone is ~102 MB, bringing the cumulative ML-artifacts total to ~198 MB. This is large but not unusual for a local-AI desktop application. Splitting the Kokoro model into a first-run download (keeping the installer at ~100 MB total) is a viable alternative if installer size is a hard constraint.
+Total installer growth from the TTS milestone is ~97 MB, bringing the cumulative ML-artifacts total to ~186 MB. Splitting the Kokoro model into a first-run download (keeping the installer at ~100 MB total) is a viable alternative if installer size is a hard constraint.
 
 ---
 
@@ -609,9 +597,9 @@ Sequencing: Moonshine ships first (higher user-facing impact, fully specified). 
 
 ## Risks and Open Questions
 
-**espeak-ng DLL.** `kokoroxide` links espeak-ng dynamically on Windows. The pre-built DLL and data files must be distributed in the installer. If `kokoroxide`'s espeak-ng version diverges from what Piper's direct integration needs, two separate DLL copies could be needed — resolve by aligning at the `kokoroxide` version used for both backends or by wrapping espeak-ng calls in a shared `engram-phoneme` internal crate.
+**espeak-ng version alignment.** `kokoro-tts` links `libespeak-ng.dll` dynamically (espeak-ng v1.51 from the official Windows release). `piper-rs` bundles its own espeak-ng data directory but does not load the DLL. There is no version conflict between the two backends because they access espeak-ng through different paths. However, if `kokoro-tts` requires a different DLL version than what is bundled, synthesis will fail at startup with a clear load error — verify the DLL version during integration testing.
 
-**`kokoroxide` maturity.** This is a community crate, not an official Hume AI or Kokoro project release. Pin to a specific version and commit SHA. If the crate becomes unmaintained, the fallback is to write a thin `ort`-based `KokoroService` directly (the ONNX interface is simple and stable).
+**`kokoro-tts` maturity.** This is a community crate, not an official Hume AI or Kokoro project release. Pin to a specific version. If the crate becomes unmaintained, the fallback is to write a thin `ort`-based `KokoroService` directly (the ONNX interface is documented above and stable). `kokoroxide` is an alternative community crate with a similar API but currently covers American English only — viable as a fallback for English-only builds.
 
 **Audio device conflicts.** `engram-audio` holds a WASAPI input stream; `engram-tts` opens a WASAPI output stream. Windows handles these independently. However, if the system uses a single USB audio device that is opened exclusively, conflicts could occur. Test on single-device configurations. Default to shared-mode WASAPI for the output stream (which `cpal` does).
 
