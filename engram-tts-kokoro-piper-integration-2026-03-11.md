@@ -49,6 +49,26 @@ Kokoro is recommended as the default. Its mixed-precision quantised ONNX model (
 
 ---
 
+## Considered and Rejected
+
+### Moshi (kyutai-labs/moshi)
+
+Moshi is a full-duplex, real-time speech-to-speech **dialogue model** — it listens and generates speech simultaneously using a 7B-parameter Temporal Transformer. It is not a TTS synthesiser.
+
+**Why rejected:** Wrong category. Moshi is a conversational AI model, not a synthesis engine that converts arbitrary text to audio. Its resource requirements (7B parameters, 24 GB GPU VRAM without quantisation) are incompatible with Engram's CPU-first, bundled-installer model. It does not accept plain text and return PCM; it runs a continuous audio session. It would be relevant if Engram added a full voice assistant mode, but it is not a replacement for Kokoro or Piper in the use cases this document describes.
+
+**Licence:** MIT/Apache 2.0 (code), CC-BY 4.0 (weights). No licence issue, but the resource profile rules it out.
+
+### Voxtral Mini 4B Realtime (mistralai/Voxtral-Mini-4B-Realtime-2602)
+
+Voxtral Mini is a 4B-parameter streaming **speech-to-text** (ASR) model. It transcribes audio input to text with <500 ms latency across 13 languages.
+
+**Why rejected:** Wrong direction. Voxtral Mini is an input model (speech → text), the complement of TTS (text → speech). It competes with Moonshine, which `engram-dictation` already uses for transcription. At 4B parameters and ≥16 GB VRAM it is also significantly heavier than Moonshine. It has no synthesis capability and cannot produce audio output.
+
+**Future relevance:** If Engram's transcription quality or multilingual support becomes a priority, Voxtral Mini is a candidate to replace or supplement Moonshine — particularly for its 13-language coverage versus Moonshine's English focus. That is out of scope for this TTS milestone.
+
+---
+
 ## Kokoro ONNX Interface
 
 The ONNX model takes three inputs and produces one output:
